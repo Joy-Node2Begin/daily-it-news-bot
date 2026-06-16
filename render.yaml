@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: n8n-news-bot
+    env: docker
+    plan: free # Note: Free plan will spin down after inactivity. Upgrade to Starter ($7) for 24/7.
+    # We mount a persistent disk to save your workflow/credentials between restarts.
+    # Note: Disks cost $0.25/month and require a paid instance. If you use a free instance, 
+    # remove the 'disk' section and remember to re-import your workflow if Render restarts the server.
+    disk:
+      name: n8n-data
+      mountPath: /home/node/.n8n
+      sizeGB: 1
+    envVars:
+      - key: N8N_PORT
+        value: 10000
+      - key: PORT
+        value: 10000
+      - key: WEBHOOK_URL
+        value: https://n8n-news-bot.onrender.com
+      - key: GENERIC_TIMEZONE
+        value: Asia/Kolkata
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: false

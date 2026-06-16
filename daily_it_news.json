@@ -1,0 +1,868 @@
+{
+  "id": "abc123de-456f-789g-0hi1-jklmno234pqr",
+  "name": "Daily IT News Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1"
+    },
+    {
+      "id": "2",
+      "name": "GNews Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "continueOnFail": true,
+      "parameters": {
+        "url": "https://gnews.io/api/v4/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "AI OR \"machine learning\" OR cybersecurity OR software OR tech OR \"artificial intelligence\" OR cloud OR OpenAI OR Google OR Microsoft OR Apple OR Meta OR startup OR blockchain OR semiconductor"
+            },
+            {
+              "name": "lang",
+              "value": "en"
+            },
+            {
+              "name": "sortby",
+              "value": "publishedAt"
+            },
+            {
+              "name": "max",
+              "value": "20"
+            },
+            {
+              "name": "apikey",
+              "value": "003bc9a03d345d471fd1318ec7c2d0ac"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        200,
+        -200
+      ]
+    },
+    {
+      "id": "3",
+      "name": "TechCrunch RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "parameters": {
+        "url": "https://techcrunch.com/feed/"
+      },
+      "position": [
+        200,
+        -50
+      ]
+    },
+    {
+      "id": "15",
+      "name": "The Verge RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "parameters": {
+        "url": "https://www.theverge.com/rss/index.xml"
+      },
+      "position": [
+        200,
+        100
+      ]
+    },
+    {
+      "id": "30",
+      "name": "Hacker News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://hnrss.org/newest"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        250
+      ]
+    },
+    {
+      "id": "31",
+      "name": "OpenAI Blog RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://openai.com/news/rss.xml"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        400
+      ]
+    },
+    {
+      "id": "32",
+      "name": "Anthropic Blog RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://news.google.com/rss/search?q=anthropic"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        550
+      ]
+    },
+    {
+      "id": "33",
+      "name": "Hugging Face Blog",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://huggingface.co/blog/feed.xml"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        700
+      ]
+    },
+    {
+      "id": "34",
+      "name": "arXiv AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "http://export.arxiv.org/rss/cs.AI"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        850
+      ]
+    },
+    {
+      "id": "35",
+      "name": "Reddit AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://www.reddit.com/r/artificial/.rss"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        1000
+      ]
+    },
+    {
+      "id": "36",
+      "name": "Reddit ML",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://www.reddit.com/r/MachineLearning/.rss"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        1150
+      ]
+    },
+    {
+      "id": "37",
+      "name": "Google Trends US",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "parameters": {
+        "url": "https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
+      },
+      "continueOnFail": true,
+      "position": [
+        200,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "100"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 2",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "id": "101"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 3",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ],
+      "id": "102"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 4",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ],
+      "id": "103"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 5",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "104"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 6",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        0
+      ],
+      "id": "105"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 7",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "106"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 8",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        0
+      ],
+      "id": "107"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 9",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        0
+      ],
+      "id": "108"
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 10",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "id": "109"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allArticles = [];\n\nfor (const item of $input.all()) {\n  if (item.json.articles && Array.isArray(item.json.articles)) {\n    for (const article of item.json.articles) {\n      allArticles.push({ json: article });\n    }\n  } else {\n    allArticles.push(item);\n  }\n}\n\nreturn allArticles.filter(item => item.json.title);"
+      },
+      "name": "Flatten Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        0
+      ],
+      "id": "5"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "18vGSR1b2ukxTdDpuDrNG7JmTg48YuCpT3wcESrwJ7gI"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/18vGSR1b2ukxTdDpuDrNG7JmTg48YuCpT3wcESrwJ7gI/edit#gid=0"
+        },
+        "options": {}
+      },
+      "name": "Read Posted URLs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [
+        2800,
+        0
+      ],
+      "id": "6",
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YBcfyFanlpil042Q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const postedUrls = $('Read Posted URLs').all()\n  .map(i => i.json.URL)\n  .filter(Boolean);\n\nconst seen = new Set();\n\nreturn $('Flatten Items').all().filter(item => {\n  const url = item.json.url || item.json.link;\n  if (postedUrls.includes(url)) return false;\n  if (seen.has(url)) return false;\n  seen.add(url);\n  return true;\n});"
+      },
+      "name": "Remove Duplicates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3000,
+        0
+      ],
+      "id": "7"
+    },
+    {
+      "parameters": {
+        "maxItems": 10
+      },
+      "name": "Limit",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        0
+      ],
+      "id": "8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nfor (const item of $input.all()) {\n  const title = item.json.title || 'Tech News';\n  const link = item.json.url || item.json.link || item.json.id;\n  const snippet = item.json.contentSnippet || item.json.description || item.json.content || '';\n  let cleanSnippet = snippet.replace(/<[^>]*>?/gm, '').substring(0, 150);\n  if (cleanSnippet.length === 150) cleanSnippet += '...';\n  \n  const final_text = `\ud83d\ude80 *${title}*\\n\\n${cleanSnippet}\\n\\n\ud83d\udd17 [Read More](${link})`;\n  \n  results.push({\n    json: {\n      final_text: final_text,\n      title: title,\n      url: link\n    }\n  });\n}\nreturn results;"
+      },
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3400,
+        0
+      ],
+      "id": "10"
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        3600,
+        0
+      ],
+      "id": "12"
+    },
+    {
+      "parameters": {
+        "chatId": "8577064494",
+        "text": "={{$json.final_text}}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "7WCV8naZ39suus4S",
+          "name": "Telegram account"
+        }
+      },
+      "name": "Send To Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        3800,
+        0
+      ],
+      "id": "13"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "18vGSR1b2ukxTdDpuDrNG7JmTg48YuCpT3wcESrwJ7gI"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/18vGSR1b2ukxTdDpuDrNG7JmTg48YuCpT3wcESrwJ7gI/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "URL": "={{$('Limit').item.json.url || $('Limit').item.json.link}}",
+            "PostedDate": "={{new Date().toISOString()}}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YBcfyFanlpil042Q",
+          "name": "Google Sheets account"
+        }
+      },
+      "name": "Google Sheets Append",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [
+        4000,
+        0
+      ],
+      "id": "14"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GNews Fetch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TechCrunch RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "The Verge RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Hacker News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "OpenAI Blog RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Anthropic Blog RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Hugging Face Blog",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "arXiv AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reddit AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reddit ML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Trends US",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GNews Fetch": {
+      "main": [
+        [
+          {
+            "node": "Merge 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TechCrunch RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 1": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "The Verge RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 2": {
+      "main": [
+        [
+          {
+            "node": "Merge 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hacker News RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge 3",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 3": {
+      "main": [
+        [
+          {
+            "node": "Merge 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Blog RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge 4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 4": {
+      "main": [
+        [
+          {
+            "node": "Merge 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Blog RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge 5",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 5": {
+      "main": [
+        [
+          {
+            "node": "Merge 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hugging Face Blog": {
+      "main": [
+        [
+          {
+            "node": "Merge 6",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 6": {
+      "main": [
+        [
+          {
+            "node": "Merge 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "arXiv AI": {
+      "main": [
+        [
+          {
+            "node": "Merge 7",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 7": {
+      "main": [
+        [
+          {
+            "node": "Merge 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit AI": {
+      "main": [
+        [
+          {
+            "node": "Merge 8",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 8": {
+      "main": [
+        [
+          {
+            "node": "Merge 9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit ML": {
+      "main": [
+        [
+          {
+            "node": "Merge 9",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 9": {
+      "main": [
+        [
+          {
+            "node": "Merge 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Trends US": {
+      "main": [
+        [
+          {
+            "node": "Merge 10",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 10": {
+      "main": [
+        [
+          {
+            "node": "Flatten Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Items": {
+      "main": [
+        [
+          {
+            "node": "Read Posted URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Posted URLs": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Send To Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send To Telegram": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
