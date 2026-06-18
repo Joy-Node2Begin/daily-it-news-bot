@@ -1,0 +1,434 @@
+{
+  "name": "Google Review Auto-Reply (Real-Time via Pub/Sub)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gbp-review-pubsub",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Pub/Sub Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        400
+      ],
+      "webhookId": "gbp-review-pubsub"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n  const message = body.message || body;\n\n  let payload = {};\n  if (message && message.data) {\n    const decoded = Buffer.from(message.data, 'base64').toString('utf8');\n    payload = JSON.parse(decoded);\n  } else {\n    payload = message;\n  }\n\n  results.push({ json: payload });\n}\n\nreturn results;"
+      },
+      "name": "Decode Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ['NEW_REVIEW','UPDATED_REVIEW'].includes($json.notificationType) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is New or Updated Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://mybusiness.googleapis.com/v4/{{ $json.name }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {}
+      },
+      "name": "Get Review Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        280
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "name": "Google Business OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.reviewReply && $json.reviewReply.comment ? true : false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Existing Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comment && $json.comment.trim().length > 0 ? true : false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Review Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"llama3-8b-8192\",\n  max_tokens: 300,\n  messages: [\n    {\n      role: \"user\",\n      content: `You are replying on behalf of ${$vars.OWNER_NAME}, the owner of ${$vars.BUSINESS_NAME} (a ${$vars.BUSINESS_TYPE}). Write a ${$vars.REPLY_TONE} reply (3-5 sentences) to this Google review.\\n\\nAdditional instructions: ${$vars.CUSTOM_INSTRUCTIONS}\\n\\nReviewer name: ${$json.reviewer?.displayName || 'Customer'}\\nStar rating: ${$json.starRating}\\nReview text: \"${$json.comment}\"\\n\\nWrite ONLY the reply text, no preamble, no quotation marks, signed with the owner's name.`\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "name": "AI - Generate Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OpenAI/Groq API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nconst reviewData = $('Get Review Details').item.json;\n\nconst replyText = (aiResponse.choices && aiResponse.choices[0] && aiResponse.choices[0].message)\n  ? aiResponse.choices[0].message.content.trim()\n  : '';\n\nreturn [{\n  json: {\n    ...reviewData,\n    replyText\n  }\n}];"
+      },
+      "name": "Extract AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const review = $input.first().json;\nconst stars = review.starRating;\nconst owner = $vars.OWNER_NAME;\nconst business = $vars.BUSINESS_NAME;\n\nconst starMap = {\n  FIVE: `Thank you so much for the 5-star rating! We're thrilled you had a great experience with ${business}. Hope to see you again soon! - ${owner}`,\n  FOUR: `Thanks so much for the great rating! We really appreciate your support and hope to see you again at ${business}. - ${owner}`,\n  THREE: `Thank you for your feedback. We'd love to know how we can make your next visit even better at ${business}. - ${owner}`,\n  TWO: `Thank you for letting us know. We're sorry your experience wasn't perfect - we'd really like to make it right, so please reach out to us directly. - ${owner}, ${business}`,\n  ONE: `We're sorry to hear about your experience - this isn't the standard we hold ourselves to. We'd like to make it right, so please contact us directly. - ${owner}, ${business}`\n};\n\nconst replyText = starMap[stars] || `Thank you for your review! We appreciate you taking the time to share your feedback with ${business}. - ${owner}`;\n\nreturn [{ json: { ...review, replyText } }];"
+      },
+      "name": "Template Reply (No Text)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Passthrough: just forward whatever arrives from either AI or Template path\nconst item = $input.first().json;\nreturn [{ json: item }];"
+      },
+      "name": "Merge Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet reply = (item.replyText || '').trim();\n\nif (reply.length < 15) {\n  const owner = $vars.OWNER_NAME;\n  const business = $vars.BUSINESS_NAME;\n  reply = `Thank you so much for taking the time to leave us a review! We really appreciate your support. - ${owner}, ${business}`;\n}\n\nreturn [{ json: { ...item, replyText: reply } }];"
+      },
+      "name": "Safety Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://mybusiness.googleapis.com/v4/{{ $json.name }}/reply",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comment: $json.replyText }) }}",
+        "options": {}
+      },
+      "name": "Post Reply to Google",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2440,
+        200
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "name": "Google Business OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !$json.error ? true : false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Post Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Pub/Sub Webhook": {
+      "main": [
+        [
+          {
+            "node": "Decode Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode Notification": {
+      "main": [
+        [
+          {
+            "node": "Is New or Updated Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New or Updated Review?": {
+      "main": [
+        [
+          {
+            "node": "Get Review Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get Review Details": {
+      "main": [
+        [
+          {
+            "node": "Has Existing Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Existing Reply?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Has Review Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Review Text?": {
+      "main": [
+        [
+          {
+            "node": "AI - Generate Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Template Reply (No Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI - Generate Reply": {
+      "main": [
+        [
+          {
+            "node": "Extract AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract AI Reply": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Template Reply (No Text)": {
+      "main": [
+        [
+          {
+            "node": "Merge Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Reply": {
+      "main": [
+        [
+          {
+            "node": "Safety Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Check": {
+      "main": [
+        [
+          {
+            "node": "Post Reply to Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Reply to Google": {
+      "main": [
+        [
+          {
+            "node": "Post Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
