@@ -11,7 +11,7 @@ COPY google_review_auto_reply.json /workflows/google_review_auto_reply.json
 
 # Copy the import script
 COPY import-workflows.sh /import-workflows.sh
-RUN chmod +x /import-workflows.sh
+RUN sed -i 's/\r$//' /import-workflows.sh && chmod +x /import-workflows.sh
 
 # Give node user ownership
 RUN chown -R node:node /workflows /import-workflows.sh
