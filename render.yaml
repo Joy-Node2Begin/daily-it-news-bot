@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: n8n-automation-bot
-    runtime: docker
-    plan: starter  # $7/month - required for 24/7 uptime (free plan sleeps after 15 min)
+    name: n8n-news-bot
+    env: docker
+    plan: free
     healthCheckPath: /healthz
     autoDeploy: true
 
@@ -10,39 +10,22 @@ services:
     disk:
       name: n8n-data
       mountPath: /home/node/.n8n
-      sizeGB: 1  # $0.25/GB/month
+      sizeGB: 1
 
     envVars:
-      # n8n core settings
       - key: N8N_PORT
         value: 10000
       - key: PORT
         value: 10000
       - key: WEBHOOK_URL
-        value: https://n8n-automation-bot.onrender.com
+        value: https://n8n-news-bot-mnse.onrender.com
       - key: N8N_HOST
         value: 0.0.0.0
       - key: GENERIC_TIMEZONE
         value: Asia/Kolkata
       - key: N8N_DIAGNOSTICS_ENABLED
         value: false
-
-      # Security - set your own values in Render dashboard
-      - key: N8N_BASIC_AUTH_ACTIVE
-        value: true
-      - key: N8N_BASIC_AUTH_USER
-        sync: false  # Set in Render dashboard
-      - key: N8N_BASIC_AUTH_PASSWORD
-        sync: false  # Set in Render dashboard
-
-      # Encryption key for stored credentials (IMPORTANT: set once, never change)
-      - key: N8N_ENCRYPTION_KEY
-        sync: false  # Set in Render dashboard
-
-      # Execution settings for reliability
       - key: EXECUTIONS_DATA_SAVE_ON_ERROR
         value: all
       - key: EXECUTIONS_DATA_SAVE_ON_SUCCESS
         value: all
-      - key: EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS
-        value: true
