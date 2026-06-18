@@ -1,0 +1,535 @@
+{
+    "name":  "1A - GBP Publisher (Daily Gate)",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 1A — GBP Publisher (Daily Gate)\n\n**Schedule:** Daily 09:00 IST\n\n**Prerequisites:**\n1. Set n8n variables: `CRM_API_URL`, `CRM_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ADMIN_EMAIL`\n2. Create credentials:\n   - `CRM API Auth` (Header Auth): Name=`Authorization`, Value=`Bearer YOUR_CRM_API_KEY`\n   - `OpenAI API Key` (Header Auth): Name=`Authorization`, Value=`Bearer sk-YOUR_KEY`\n   - `Google Business Profile` (OAuth2)\n3. Replace `CHANGE_ME_*` credential IDs after import\n4. Set `GBP_ACCOUNT_ID` and `GBP_LOCATION_ID` in variables\n\n**Flow:** Cron → Fetch content → Combo check → OpenAI 6 variants → Save payload → Publish GBP → Log result",
+                                         "height":  340,
+                                         "width":  860,
+                                         "color":  4
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -80
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cronExpression",
+                                                                           "expression":  "0 9 * * *"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000010",
+                      "name":  "Daily 09:00 IST",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/content?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\u0026status=approved\u0027 }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000020",
+                      "name":  "Fetch Today\u0027s Content",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const response = $input.first().json;\nconst data = response.data;\n\nif (!data || (Array.isArray(data) \u0026\u0026 data.length === 0)) {\n  return [{ json: { _hasContent: false } }];\n}\n\n// Take first content row\nconst row = Array.isArray(data) ? data[0] : data;\nreturn [{ json: { ...row, _hasContent: true } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000025",
+                      "name":  "Check Content Exists",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._hasContent }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000030",
+                      "name":  "Has Content?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       980,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027 }}",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: \u0027⚠️ No approved content for today (\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027). Please check the Content Calendar.\u0027, parse_mode: \u0027HTML\u0027 } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000035",
+                      "name":  "Alert: No Content Today",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1260,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/combo/check?brand=\u0027 + $json.brand + \u0027\u0026content_type=\u0027 + $json.content_type + \u0027\u0026content_item_id=\u0027 + $json.content_item_id + \u0027\u0026area_id=\u0027 + $json.area_id }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000040",
+                      "name":  "Check Duplicate Combo",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1260,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const comboResponse = $input.first().json;\nconst content = $(\u0027Check Content Exists\u0027).first().json;\n\n// Check if combo was used within 60 days\nconst comboData = comboResponse.data;\nlet isBlocked = false;\n\nif (comboData \u0026\u0026 comboData.last_used_date) {\n  const lastUsed = new Date(comboData.last_used_date);\n  const now = new Date();\n  const daysSinceUsed = Math.floor((now - lastUsed) / (1000 * 60 * 60 * 24));\n  isBlocked = daysSinceUsed \u003c 60;\n}\n\nreturn [{ json: { ...content, _isBlocked: isBlocked, _comboData: comboData || {} } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000045",
+                      "name":  "Evaluate Combo",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1540,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._isBlocked }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000050",
+                      "name":  "Is Combo Blocked?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1820,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// 1. PATCH content status → blocked\nawait this.helpers.httpRequest({\n  method: \u0027PATCH\u0027,\n  url: CRM + \u0027/api/content/\u0027 + item.id + \u0027/status\u0027,\n  body: { status: \u0027blocked\u0027 },\n  headers: headers,\n  json: true\n});\n\n// 2. POST posting log → blocked\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/posting\u0027,\n  body: {\n    content_calendar_id: item.id,\n    platform: \u0027gbp\u0027,\n    status: \u0027blocked\u0027,\n    date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item: item.topic || \u0027\u0027,\n    area: item.area_id\n  },\n  headers: headers,\n  json: true\n});\n\n// 3. Telegram alert\nconst tgText = \u0027🚫 Duplicate combo blocked for today:\\n\u0027 +\n  \u0027Brand: \u0027 + item.brand + \u0027\\n\u0027 +\n  \u0027Content: \u0027 + (item.topic || item.content_item_id) + \u0027\\n\u0027 +\n  \u0027Area: \u0027 + item.area_id + \u0027\\n\u0027 +\n  \u0027Date: \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027);\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: tgText },\n  json: true\n});\n\nreturn [{ json: { status: \u0027blocked\u0027, message: \u0027Combo blocked and notified\u0027 } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000055",
+                      "name":  "Handle Blocked Combo",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2100,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Resolve brand settings\nlet tone, cta;\nif (item.brand === \u0027extrabits_academy\u0027) {\n  tone = \u0027warm, educational, outcome-focused\u0027;\n  cta = \u0027Visit ExtraBits Academy for a FREE demo class\u0027;\n} else {\n  tone = \u0027bold, modern, tech-forward, solution-led\u0027;\n  cta = \u0027Contact ExtraBits for a free consultation\u0027;\n}\n\nreturn [{ json: { ...item, tone: tone, cta: cta } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000060",
+                      "name":  "Resolve Brand Settings",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.groq.com/openai/v1/chat/completions",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ { model: \u0027gpt-4o-mini\u0027, temperature: 0.7, max_tokens: 2000, response_format: { type: \u0027json_object\u0027 }, messages: [ { role: \u0027system\u0027, content: \u0027You are an SEO content writer for a Surat-based company. Generate platform-specific captions from a master post. Never mention fees or pricing. Always include the brand CTA.\u0027 }, { role: \u0027user\u0027, content: \u0027Master caption: \u0027 + $json.master_caption + \u0027\\nPrimary keyword: \u0027 + $json.primary_keyword + \u0027\\nSecondary keyword: \u0027 + $json.secondary_keyword + \u0027\\nArea: \u0027 + $json.area_id + \u0027\\nBrand tone: \u0027 + $json.tone + \u0027\\nCTA: \u0027 + $json.cta + \u0027\\nHashtags: \u0027 + ($json.hashtags || \u0027\u0027) + \u0027\\n\\nReturn ONLY a valid JSON object with exactly these 6 keys:\\n{\\n  \"gbp_caption\": \"80-100 words. Local, direct tone. Primary keyword in first sentence. Mention area and Surat naturally. No hashtags, no emojis. End with CTA.\",\\n  \"ig_caption\": \"150-180 words. Hook in first line. Emoji bullets. Include 10-15 hashtags at end. Never mention fees.\",\\n  \"li_caption\": \"200-300 words. Professional tone. Minimal emojis. Career or business framing. 0-5 hashtags max.\",\\n  \"pin_caption\": \"100-200 words. SEO-dense. Pin title = primary keyword. Area + Surat in body.\",\\n  \"twitter_caption\": \"Under 280 characters. Punchy. 2-3 hashtags only.\",\\n  \"threads_caption\": \"200-400 characters. Conversational. Optional hashtags.\"\\n}\u0027 } ] } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000070",
+                      "name":  "Generate 6 Platform Variants",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       2400,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_OPENAI",
+                                                                 "name":  "OpenAI API Key"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const aiResponse = $input.first().json;\nconst content = $(\u0027Resolve Brand Settings\u0027).first().json;\n\n// Parse AI response\nlet aiText = aiResponse.choices?.[0]?.message?.content || \u0027\u0027;\naiText = aiText.replace(/```json|```/g, \u0027\u0027).trim();\n\nlet captions;\ntry {\n  captions = JSON.parse(aiText);\n} catch (e) {\n  // Fallback - use master caption for all platforms\n  captions = {\n    gbp_caption: content.master_caption,\n    ig_caption: content.master_caption,\n    li_caption: content.master_caption,\n    pin_caption: content.master_caption,\n    twitter_caption: (content.master_caption || \u0027\u0027).substring(0, 275) + \u0027...\u0027,\n    threads_caption: (content.master_caption || \u0027\u0027).substring(0, 395) + \u0027...\u0027\n  };\n}\n\n// Prepare image URLs from Google Drive share link\nconst imageUrl = content.image_url || \u0027\u0027;\nlet fileId = \u0027\u0027;\n\n// Extract FILE_ID from various Google Drive URL formats\nconst driveMatch = imageUrl.match(/\\/d\\/([a-zA-Z0-9_-]+)/);\nif (driveMatch) {\n  fileId = driveMatch[1];\n}\n\nconst directImageUrl = fileId\n  ? \u0027https://drive.google.com/uc?export=view\u0026id=\u0027 + fileId\n  : imageUrl;\n\nconst metaImageUrl = directImageUrl;\n\nconst proxyMetaImageUrl = fileId\n  ? \u0027https://images.weserv.nl/?url=drive.google.com/uc?id=\u0027 + fileId\n  : imageUrl;\n\n// Pinterest image: use pin_image_url if available, else direct\nconst pinterestImageUrl = content.pin_image_url || directImageUrl;\n\nreturn [{\n  json: {\n    ...content,\n    ...captions,\n    direct_image_url: directImageUrl,\n    meta_image_url: metaImageUrl,\n    proxy_meta_image_url: proxyMetaImageUrl,\n    pinterest_image_url: pinterestImageUrl,\n    file_id: fileId\n  }\n}];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000080",
+                      "name":  "Parse AI \u0026 Prepare Images",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "PATCH",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/content/\u0027 + $json.id + \u0027/payload\u0027 }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ { gbp_caption: $json.gbp_caption, ig_caption: $json.ig_caption, li_caption: $json.li_caption, pin_caption: $json.pin_caption, twitter_caption: $json.twitter_caption, threads_caption: $json.threads_caption, direct_image_url: $json.direct_image_url, meta_image_url: $json.meta_image_url, proxy_meta_image_url: $json.proxy_meta_image_url, pinterest_image_url: $json.pinterest_image_url, tone: $json.tone, cta: $json.cta } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000085",
+                      "name":  "Save Payload to CRM",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       3000,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Attempt GBP publish\ntry {\n  const gbpResponse = await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://mybusiness.googleapis.com/v4/accounts/\u0027 + $env.GBP_ACCOUNT_ID + \u0027/locations/\u0027 + $env.GBP_LOCATION_ID + \u0027/localPosts\u0027,\n    body: {\n      topicType: \u0027STANDARD\u0027,\n      summary: item.gbp_caption,\n      media: [{\n        mediaFormat: \u0027PHOTO\u0027,\n        sourceUrl: item.direct_image_url\n      }]\n    },\n    headers: {\n      \u0027Authorization\u0027: \u0027Bearer \u0027 + $vars.GBP_ACCESS_TOKEN,\n      \u0027Content-Type\u0027: \u0027application/json\u0027\n    },\n    json: true\n  });\n\n  return [{\n    json: {\n      ...item,\n      gbp_success: true,\n      gbp_post_name: gbpResponse.name || \u0027\u0027,\n      gbp_error: null\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ...item,\n      gbp_success: false,\n      gbp_post_name: \u0027\u0027,\n      gbp_error: error.message || \u0027GBP publish failed\u0027\n    }\n  }];\n}"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000090",
+                      "name":  "Publish to GBP",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3300,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json.gbp_success }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000100",
+                      "name":  "GBP Published?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3600,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// 1. POST combo tracker update\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/combo\u0027,\n  body: {\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item_id: item.content_item_id,\n    area_id: item.area_id,\n    last_used_date: $now.toFormat(\u0027yyyy-MM-dd\u0027)\n  },\n  headers: headers,\n  json: true\n});\n\n// 2. POST posting log → success\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/posting\u0027,\n  body: {\n    content_calendar_id: item.id,\n    platform: \u0027gbp\u0027,\n    status: \u0027success\u0027,\n    post_url: item.gbp_post_name,\n    date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item: item.topic || \u0027\u0027,\n    area: item.area_id\n  },\n  headers: headers,\n  json: true\n});\n\n// 3. PATCH content status → in_progress\nawait this.helpers.httpRequest({\n  method: \u0027PATCH\u0027,\n  url: CRM + \u0027/api/content/\u0027 + item.id + \u0027/status\u0027,\n  body: { status: \u0027in_progress\u0027 },\n  headers: headers,\n  json: true\n});\n\nreturn [{ json: { status: \u0027success\u0027, message: \u0027GBP published + combo updated + status in_progress\u0027 } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000110",
+                      "name":  "Handle GBP Success",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3900,
+                                       280
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// 1. POST posting log → manual_backup_sent (do NOT update combo)\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/posting\u0027,\n  body: {\n    content_calendar_id: item.id,\n    platform: \u0027gbp\u0027,\n    status: \u0027manual_backup_sent\u0027,\n    error: item.gbp_error,\n    date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item: item.topic || \u0027\u0027,\n    area: item.area_id\n  },\n  headers: headers,\n  json: true\n});\n\n// 2. PATCH content status → failed\nawait this.helpers.httpRequest({\n  method: \u0027PATCH\u0027,\n  url: CRM + \u0027/api/content/\u0027 + item.id + \u0027/status\u0027,\n  body: { status: \u0027failed\u0027 },\n  headers: headers,\n  json: true\n});\n\n// 3. Telegram backup with caption for manual posting\nconst tgText = \u0027⚠️ GBP Auto-Post FAILED — \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\\n\u0027 +\n  \u0027Brand: \u0027 + item.brand + \u0027\\n\u0027 +\n  \u0027Error: \u0027 + (item.gbp_error || \u0027Unknown\u0027) + \u0027\\n\\n\u0027 +\n  \u0027--- MANUAL POST CAPTION ---\\n\u0027 +\n  item.gbp_caption + \u0027\\n\\n\u0027 +\n  \u0027Image: \u0027 + item.direct_image_url;\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: tgText },\n  json: true\n});\n\nreturn [{ json: { status: \u0027failed\u0027, message: \u0027GBP failed, backup sent via Telegram\u0027, error: item.gbp_error } }];"
+                                     },
+                      "id":  "1a000000-0001-4000-8000-000000000120",
+                      "name":  "Handle GBP Failure",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3900,
+                                       560
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Daily 09:00 IST":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Fetch Today\u0027s Content",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Fetch Today\u0027s Content":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Check Content Exists",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Check Content Exists":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Has Content?",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Has Content?":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Check Duplicate Combo",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Alert: No Content Today",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Check Duplicate Combo":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Evaluate Combo",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Evaluate Combo":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Is Combo Blocked?",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Is Combo Blocked?":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Handle Blocked Combo",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ],
+                                                               [
+                                                                   {
+                                                                       "node":  "Resolve Brand Settings",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Resolve Brand Settings":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Generate 6 Platform Variants",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Generate 6 Platform Variants":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Parse AI \u0026 Prepare Images",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                        "Parse AI \u0026 Prepare Images":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Save Payload to CRM",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                        "Save Payload to CRM":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Publish to GBP",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Publish to GBP":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "GBP Published?",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "GBP Published?":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Handle GBP Success",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ],
+                                                            [
+                                                                {
+                                                                    "node":  "Handle GBP Failure",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "1a-gbp-publisher-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

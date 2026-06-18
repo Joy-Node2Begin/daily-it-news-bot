@@ -1,0 +1,467 @@
+{
+  "name": "WF4: CRM \u2192 Send Outbound Message",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF4: CRM \u2192 Send Outbound Message\n\n**Prerequisites:**\n1. Credentials: WhatsApp Cloud API Token (Header Auth), Meta Page Access Token (Header Auth), CRM Webhook Auth (not used here but referenced)\n2. n8n Variable: `WHATSAPP_PHONE_NUMBER_ID`\n3. WhatsApp Header Auth \u2192 Name: `Authorization`, Value: `Bearer YOUR_WA_ACCESS_TOKEN`\n4. Meta Page Header Auth \u2192 Name: `Authorization`, Value: `Bearer YOUR_PAGE_ACCESS_TOKEN` (covers both Messenger & IG)\n\n**CRM calls this webhook when a counselor sends a reply from the Unified Inbox.**\n\n**Flow:** CRM POST \u2192 Route by channel_type \u2192 Send via WhatsApp/Messenger/Instagram \u2192 Return success/error",
+        "height": 300,
+        "width": 780,
+        "color": 2
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-message",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000010",
+      "name": "Send Message Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "send-message-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Validate required fields\nconst channelType = data.channel_type || '';\nconst recipientId = data.recipient_id || '';\nconst message = data.message || '';\nconst conversationId = data.conversation_id || null;\n\nif (!channelType || !recipientId || !message) {\n  return [{\n    json: {\n      success: false,\n      error: 'Missing required fields: channel_type, recipient_id, message',\n      channel_type: channelType\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    channel_type: channelType,\n    recipient_id: recipientId,\n    message: message,\n    conversation_id: conversationId,\n    success: true\n  }\n}];"
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000015",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000017",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.channel_type }}",
+                    "rightValue": "whatsapp",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "WhatsApp"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.channel_type }}",
+                    "rightValue": "messenger",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Messenger"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.channel_type }}",
+                    "rightValue": "instagram",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Instagram"
+            }
+          ],
+          "fallbackOutput": {
+            "type": "extra",
+            "outputKey": "Unknown Channel"
+          }
+        },
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000020",
+      "name": "Route by Channel",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/v21.0/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.recipient_id, type: 'text', text: { body: $json.message } } }}",
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000030",
+      "name": "Send via WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_WA",
+          "name": "WhatsApp Cloud API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/me/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { recipient: { id: $json.recipient_id }, message: { text: $json.message }, messaging_type: 'RESPONSE' } }}",
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000040",
+      "name": "Send via Messenger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_PAGE",
+          "name": "Meta Page Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/me/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { recipient: { id: $json.recipient_id }, message: { text: $json.message }, messaging_type: 'RESPONSE' } }}",
+        "options": {}
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000050",
+      "name": "Send via Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        540
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_PAGE",
+          "name": "Meta Page Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sendResult = $input.first().json;\nconst original = $('Validate Input').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    channel: original.channel_type,\n    recipient: original.recipient_id,\n    conversation_id: original.conversation_id,\n    platform_message_id: sendResult.messages?.[0]?.id || sendResult.message_id || sendResult.mid || '',\n    sent_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000060",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000070",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: $json.error || 'Validation failed' } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000075",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    success: false,\n    error: 'Unknown channel type: ' + $json.channel_type,\n    channel_type: $json.channel_type\n  }\n}];"
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000076",
+      "name": "Unknown Channel Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "w4a1b2c3-0001-4001-8001-000000000077",
+      "name": "Respond Unknown Channel",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        720
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Send Message Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Route by Channel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Channel": {
+      "main": [
+        [
+          {
+            "node": "Send via WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send via Messenger",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send via Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Channel Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Messenger": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Instagram": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unknown Channel Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Unknown Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "wf4-outbound-sender-v1",
+  "meta": {
+    "instanceId": "extrabits-crm-inquiry-system"
+  },
+  "tags": [
+    {
+      "name": "CRM Inquiry System"
+    }
+  ],
+  "id": "29eb1091-58bd-4a2a-b454-ff3692ee1c37"
+}

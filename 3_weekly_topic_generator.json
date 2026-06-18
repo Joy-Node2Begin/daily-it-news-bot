@@ -1,0 +1,151 @@
+{
+    "id": "zI3bNDGHYUBH4Ccn",
+    "name":  "3 - Weekly Topic Generator",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 3 — Weekly Topic Generator\n\n**Schedule:** Every Sunday at 08:00 IST\n\n**Prerequisites:**\n1. CRM API must have: `/courses`, `/services`, `/areas`, `/combo/check` endpoints\n2. n8n variables: `CRM_API_URL`, `CRM_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`\n\n**Flow:** Cron → Fetch courses + services + areas + combos → Build valid pools → Generate 7 daily suggestions with brand rotation → Send Telegram summary → Optionally create draft rows in CRM\n\n**Brand rotation:** Mon=Academy, Tue=ExtraBits, Wed=Academy, Thu=ExtraBits, Fri=Academy, Sat=ExtraBits, Sun=Academy",
+                                         "height":  280,
+                                         "width":  840,
+                                         "color":  1
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -60
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cronExpression",
+                                                                           "expression":  "0 8 * * 0"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000010",
+                      "name":  "Sunday 08:00 IST",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Fetch all data in parallel-ish manner\nlet courses = [];\nlet services = [];\nlet areas = [];\nlet combos = [];\n\ntry {\n  const coursesResp = await this.helpers.httpRequest({ method: \u0027GET\u0027, url: CRM + \u0027/api/courses\u0027, headers, json: true });\n  courses = coursesResp.data || [];\n  if (!Array.isArray(courses)) courses = [courses];\n} catch(e) { courses = []; }\n\ntry {\n  const servicesResp = await this.helpers.httpRequest({ method: \u0027GET\u0027, url: CRM + \u0027/api/services\u0027, headers, json: true });\n  services = servicesResp.data || [];\n  if (!Array.isArray(services)) services = [services];\n} catch(e) { services = []; }\n\ntry {\n  const areasResp = await this.helpers.httpRequest({ method: \u0027GET\u0027, url: CRM + \u0027/api/areas\u0027, headers, json: true });\n  areas = areasResp.data || [];\n  if (!Array.isArray(areas)) areas = [areas];\n} catch(e) { areas = []; }\n\ntry {\n  const combosResp = await this.helpers.httpRequest({ method: \u0027GET\u0027, url: CRM + \u0027/api/combo/check\u0027, headers, json: true });\n  combos = combosResp.data || [];\n  if (!Array.isArray(combos)) combos = [combos];\n} catch(e) { combos = []; }\n\n// Fallback static data if CRM API is not available or returns empty list\nif (courses.length === 0) {\n  courses = [\n    { id: 1, name: \u0022Python Programming\u0022, seo_name: \u0022python programming course\u0022, short_name: \u0022Python\u0022 },\n    { id: 2, name: \u0022Data Analytics\u0022, seo_name: \u0022data analytics training\u0022, short_name: \u0022Data Analytics\u0022 },\n    { id: 3, name: \u0022MERN Stack Development\u0022, seo_name: \u0022mern stack development course\u0022, short_name: \u0022MERN\u0022 },\n    { id: 4, name: \u0022Android App Development\u0022, seo_name: \u0022android app development course\u0022, short_name: \u0022Android\u0022 },\n    { id: 5, name: \u0022Flutter UI/UX Development\u0022, seo_name: \u0022flutter development training\u0022, short_name: \u0022Flutter\u0022 },\n    { id: 6, name: \u0022Cyber Security \u0026 Ethical Hacking\u0022, seo_name: \u0022cyber security training\u0022, short_name: \u0022Cyber Security\u0022 },\n    { id: 7, name: \u0022BCA / BSCIT Coaching\u0022, seo_name: \u0022bca bscit tuition coaching\u0022, short_name: \u0022BCA/BSCIT\u0022 }\n  ];\n}\n\nif (services.length === 0) {\n  services = [\n    { id: 101, name: \u0022Local SEO Optimization\u0022, seo_name: \u0022local seo optimization service\u0022, short_name: \u0022Local SEO\u0022 },\n    { id: 102, name: \u0022Web Development Solutions\u0022, seo_name: \u0022web development services\u0022, short_name: \u0022Web Dev\u0022 },\n    { id: 103, name: \u0022Social Media Marketing\u0022, seo_name: \u0022social media marketing service\u0022, short_name: \u0022SMM\u0022 },\n    { id: 104, name: \u0022Graphic \u0026 UI/UX Design\u0022, seo_name: \u0022graphic UI UX design service\u0022, short_name: \u0022UI/UX\u0022 },\n    { id: 105, name: \u0022Lead Generation Campaign\u0022, seo_name: \u0022lead generation marketing service\u0022, short_name: \u0022Lead Gen\u0022 }\n  ];\n}\n\nif (areas.length === 0) {\n  areas = [\n    { id: 201, area: \u0022Vesu\u0022 },\n    { id: 202, area: \u0022Adajan\u0022 },\n    { id: 203, area: \u0022Varachha\u0022 },\n    { id: 204, area: \u0022Katargam\u0022 },\n    { id: 205, area: \u0022Pal\u0022 },\n    { id: 206, area: \u0022Piplod\u0022 },\n    { id: 207, area: \u0022Rander\u0022 }\n  ];\n}\n\nreturn [{ json: { courses, services, areas, combos } }];"
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000020",
+                      "name":  "Fetch All CRM Data",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const { courses, services, areas, combos } = $input.first().json;\n\nconst now = new Date();\nconst sixtyDaysAgo = new Date(now);\nsixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);\n\n// Build blocked set (combos used within last 60 days)\nconst blockedSet = new Set();\nfor (const combo of combos) {\n  if (combo.last_used_date) {\n    const lastUsed = new Date(combo.last_used_date);\n    if (lastUsed \u003e= sixtyDaysAgo) {\n      blockedSet.add(combo.brand + \u0027_\u0027 + combo.content_type + \u0027_\u0027 + combo.content_item_id + \u0027_\u0027 + combo.area_id);\n    }\n  }\n}\n\n// Build valid Academy pool (course × area, not blocked)\nconst academyPool = [];\nfor (const course of courses) {\n  for (const area of areas) {\n    const key = \u0027extrabits_academy_course_\u0027 + course.id + \u0027_\u0027 + area.id;\n    if (!blockedSet.has(key)) {\n      academyPool.push({\n        brand: \u0027extrabits_academy\u0027,\n        content_type: \u0027course\u0027,\n        content_item_id: course.id,\n        content_item_name: course.seo_name || course.course_name || course.name || \u0027\u0027,\n        short_name: course.short_name || \u0027\u0027,\n        area_id: area.id,\n        area_name: area.area || \u0027\u0027,\n        seo_name: course.seo_name || \u0027\u0027\n      });\n    }\n  }\n}\n\n// Build valid ExtraBits pool (service × area, not blocked)\nconst extrabitsPool = [];\nfor (const service of services) {\n  for (const area of areas) {\n    const key = \u0027extrabits_service_\u0027 + service.id + \u0027_\u0027 + area.id;\n    if (!blockedSet.has(key)) {\n      extrabitsPool.push({\n        brand: \u0027extrabits\u0027,\n        content_type: \u0027service\u0027,\n        content_item_id: service.id,\n        content_item_name: service.seo_name || service.service_name || \u0027\u0027,\n        short_name: service.short_name || \u0027\u0027,\n        area_id: area.id,\n        area_name: area.area || \u0027\u0027,\n        seo_name: service.seo_name || \u0027\u0027\n      });\n    }\n  }\n}\n\n// Shuffle pools\nconst shuffle = (arr) =\u003e {\n  for (let i = arr.length - 1; i \u003e 0; i--) {\n    const j = Math.floor(Math.random() * (i + 1));\n    [arr[i], arr[j]] = [arr[j], arr[i]];\n  }\n  return arr;\n};\nshuffle(academyPool);\nshuffle(extrabitsPool);\n\n// Generate 7 suggestions with brand rotation\n// Day 1 (Mon) = Academy, Day 2 (Tue) = ExtraBits, alternating\nconst monday = new Date(now);\nmonday.setDate(monday.getDate() + 1); // Sunday → Monday\n\nconst suggestions = [];\nlet academyIdx = 0;\nlet extrabitsIdx = 0;\n\nfor (let day = 0; day \u003c 7; day++) {\n  const date = new Date(monday);\n  date.setDate(date.getDate() + day);\n  const dateStr = date.toISOString().split(\u0027T\u0027)[0];\n  const dayNames = [\u0027Mon\u0027, \u0027Tue\u0027, \u0027Wed\u0027, \u0027Thu\u0027, \u0027Fri\u0027, \u0027Sat\u0027, \u0027Sun\u0027];\n\n  const isAcademy = (day % 2 === 0); // 0,2,4,6 = Academy; 1,3,5 = ExtraBits\n  let selected;\n\n  if (isAcademy \u0026\u0026 academyIdx \u003c academyPool.length) {\n    selected = academyPool[academyIdx++];\n  } else if (!isAcademy \u0026\u0026 extrabitsIdx \u003c extrabitsPool.length) {\n    selected = extrabitsPool[extrabitsIdx++];\n  } else {\n    // Fallback: use whatever pool has items\n    if (academyIdx \u003c academyPool.length) {\n      selected = academyPool[academyIdx++];\n    } else if (extrabitsIdx \u003c extrabitsPool.length) {\n      selected = extrabitsPool[extrabitsIdx++];\n    } else {\n      selected = { brand: \u0027N/A\u0027, content_item_name: \u0027No items available\u0027, area_name: \u0027\u0027, seo_name: \u0027\u0027 };\n    }\n  }\n\n  // Generate keywords\n  let primaryKw, secondaryKw;\n  if (selected.brand === \u0027extrabits_academy\u0027) {\n    primaryKw = \u0027best \u0027 + selected.seo_name + \u0027 near \u0027 + selected.area_name + \u0027 in surat\u0027;\n    secondaryKw = \u0027best \u0027 + selected.seo_name + \u0027 institute in \u0027 + selected.area_name + \u0027 surat\u0027;\n  } else {\n    primaryKw = \u0027best \u0027 + selected.seo_name + \u0027 near \u0027 + selected.area_name + \u0027 in surat\u0027;\n    secondaryKw = \u0027best \u0027 + selected.seo_name + \u0027 in \u0027 + selected.area_name + \u0027 surat\u0027;\n  }\n\n  suggestions.push({\n    day: day + 1,\n    day_name: dayNames[day],\n    date: dateStr,\n    brand: selected.brand,\n    brand_label: selected.brand === \u0027extrabits_academy\u0027 ? \u0027Academy\u0027 : \u0027ExtraBits\u0027,\n    content_type: selected.content_type || \u0027\u0027,\n    content_item_id: selected.content_item_id || \u0027\u0027,\n    content_item_name: selected.content_item_name || \u0027\u0027,\n    area_id: selected.area_id || \u0027\u0027,\n    area_name: selected.area_name || \u0027\u0027,\n    primary_keyword: primaryKw || \u0027\u0027,\n    secondary_keyword: secondaryKw || \u0027\u0027\n  });\n}\n\nreturn [{ json: {\n  monday_date: monday.toISOString().split(\u0027T\u0027)[0],\n  suggestions,\n  academy_pool_size: academyPool.length,\n  extrabits_pool_size: extrabitsPool.length\n} }];"
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000030",
+                      "name":  "Build Pools \u0026 Generate 7 Suggestions",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       740,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const data = $input.first().json;\nconst suggestions = data.suggestions;\n\n// Build Telegram message\nlet msg = \u0027📅 Weekly Content Suggestions — Week of \u0027 + data.monday_date + \u0027\\n\u0027;\nmsg += \u0027Available: \u0027 + data.academy_pool_size + \u0027 academy combos, \u0027 + data.extrabits_pool_size + \u0027 extrabits combos\\n\\n\u0027;\n\nfor (const s of suggestions) {\n  msg += \u0027Day \u0027 + s.day + \u0027 (\u0027 + s.day_name + \u0027): [\u0027 + s.brand_label + \u0027] \u0027 +\n    s.content_item_name + \u0027 | \u0027 + s.area_name + \u0027\\n\u0027 +\n    \u0027  KW: \u0027 + s.primary_keyword + \u0027\\n\\n\u0027;\n}\n\nmsg += \u0027✅ Next step: Generate master captions for each row using the ChatGPT prompt in your system doc, then add to CRM Content Calendar with status = draft.\u0027;\n\n// Send Telegram\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: msg },\n  json: true\n});\n\nreturn [{ json: { ...data, _telegramSent: true } }];"
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000040",
+                      "name":  "Send Telegram Suggestions",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1080,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const data = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\nlet created = 0;\nlet failed = 0;\n\nfor (const s of data.suggestions) {\n  if (!s.content_item_id || s.brand === \u0027N/A\u0027) {\n    failed++;\n    continue;\n  }\n\n  try {\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: CRM + \u0027/api/content\u0027,\n      body: {\n        date: s.date,\n        brand: s.brand,\n        content_type: s.content_type,\n        content_item_id: s.content_item_id,\n        area_id: s.area_id,\n        topic: s.content_item_name + \u0027 in \u0027 + s.area_name,\n        primary_keyword: s.primary_keyword,\n        secondary_keyword: s.secondary_keyword,\n        status: \u0027draft\u0027\n      },\n      headers: headers,\n      json: true\n    });\n    created++;\n  } catch(e) {\n    failed++;\n  }\n}\n\nreturn [{ json: { drafts_created: created, drafts_failed: failed } }];"
+                                     },
+                      "id":  "30000000-0001-4000-8000-000000000050",
+                      "name":  "Create Draft Rows in CRM",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1400,
+                                       400
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Sunday 08:00 IST":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Fetch All CRM Data",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Fetch All CRM Data":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Build Pools \u0026 Generate 7 Suggestions",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Build Pools \u0026 Generate 7 Suggestions":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Send Telegram Suggestions",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                        "Send Telegram Suggestions":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Create Draft Rows in CRM",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "3-weekly-topic-generator-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

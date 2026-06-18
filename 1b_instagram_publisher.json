@@ -1,0 +1,440 @@
+{
+    "name":  "1B - Instagram Publisher",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 1B — Instagram Publisher\n\n**Schedule:** Daily 11:00 IST\n\n**Prerequisites:**\n1. Workflow 1A must have run and saved payload to CRM\n2. Set n8n variables: `META_ACCESS_TOKEN`, `IG_USER_ID`\n3. Create credentials: `CRM API Auth` (same as 1A)\n\n**Flow:** Cron → Load payload → Check GBP status → Create IG container → Retry with proxy if needed → Publish → Log result",
+                                         "height":  220,
+                                         "width":  720,
+                                         "color":  5
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cronExpression",
+                                                                           "expression":  "0 11 * * *"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000010",
+                      "name":  "Daily 11:00 IST",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/content?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\u0026with_payload=1\u0027 }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000020",
+                      "name":  "Load Today\u0027s Payload",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const response = $input.first().json;\nconst data = response.data;\n\nif (!data || (Array.isArray(data) \u0026\u0026 data.length === 0)) {\n  return [{ json: { _hasPayload: false } }];\n}\n\nconst row = Array.isArray(data) ? data[0] : data;\n\n// Check if payload (captions) exist\nif (!row.ig_caption \u0026\u0026 !row.prepared_payload) {\n  return [{ json: { _hasPayload: false } }];\n}\n\n// If prepared_payload is a JSON string, parse it\nlet payload = {};\nif (row.prepared_payload) {\n  try { payload = JSON.parse(row.prepared_payload); } catch(e) { payload = {}; }\n}\n\nreturn [{ json: { ...row, ...payload, _hasPayload: true } }];"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000025",
+                      "name":  "Validate Payload",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._hasPayload }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000030",
+                      "name":  "Has Payload?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       980,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027 }}",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: \u0027⚠️ Instagram: No payload found for \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027. GBP workflow (1A) may have failed.\u0027 } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000035",
+                      "name":  "Alert: No Payload",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1260,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/posting?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\u0026platform=gbp\u0027 }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000040",
+                      "name":  "Check GBP Status",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1260,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const gbpPosting = $input.first().json;\nconst content = $(\u0027Validate Payload\u0027).first().json;\n\nconst gbpData = gbpPosting.data;\nlet gbpStatus = \u0027\u0027;\nif (gbpData) {\n  gbpStatus = Array.isArray(gbpData) \u0026\u0026 gbpData.length \u003e 0 ? gbpData[0].status : (gbpData.status || \u0027\u0027);\n}\n\nconst gbpReady = (gbpStatus === \u0027success\u0027 || gbpStatus === \u0027manual_backup_sent\u0027);\n\nreturn [{ json: { ...content, gbp_status: gbpStatus, _gbpReady: gbpReady } }];"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000045",
+                      "name":  "Evaluate GBP Status",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1540,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._gbpReady }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000050",
+                      "name":  "GBP Ready?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1820,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027 }}",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: \u0027⚠️ Instagram skipped: GBP not ready (status: \u0027 + $json.gbp_status + \u0027). Date: \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000055",
+                      "name":  "Alert: GBP Not Ready",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       2100,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Attempt 1: Create IG container with direct Drive URL\ntry {\n  const containerResponse = await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.IG_USER_ID + \u0027/media\u0027,\n    body: {\n      image_url: item.meta_image_url,\n      caption: item.ig_caption,\n      access_token: $vars.META_ACCESS_TOKEN\n    },\n    json: true\n  });\n\n  if (containerResponse.id) {\n    return [{ json: { ...item, container_id: containerResponse.id, _containerCreated: true, _usedProxy: false } }];\n  }\n  throw new Error(\u0027No container ID returned\u0027);\n} catch (error1) {\n  // Attempt 2: Retry with proxy URL\n  try {\n    const containerResponse2 = await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.IG_USER_ID + \u0027/media\u0027,\n      body: {\n        image_url: item.proxy_meta_image_url,\n        caption: item.ig_caption,\n        access_token: $vars.META_ACCESS_TOKEN\n      },\n      json: true\n    });\n\n    if (containerResponse2.id) {\n      return [{ json: { ...item, container_id: containerResponse2.id, _containerCreated: true, _usedProxy: true } }];\n    }\n    throw new Error(\u0027No container ID from proxy attempt\u0027);\n  } catch (error2) {\n    return [{ json: { ...item, container_id: \u0027\u0027, _containerCreated: false, ig_error: \u0027Attempt 1: \u0027 + error1.message + \u0027 | Attempt 2: \u0027 + error2.message } }];\n  }\n}"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000060",
+                      "name":  "Create IG Container (with retry)",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._containerCreated }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000065",
+                      "name":  "Container Created?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2400,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Publish the container\ntry {\n  const publishResponse = await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.IG_USER_ID + \u0027/media_publish\u0027,\n    body: {\n      creation_id: item.container_id,\n      access_token: $vars.META_ACCESS_TOKEN\n    },\n    json: true\n  });\n\n  return [{ json: { ...item, ig_post_id: publishResponse.id || \u0027\u0027, _igPublished: true } }];\n} catch (error) {\n  return [{ json: { ...item, ig_post_id: \u0027\u0027, _igPublished: false, ig_error: error.message } }];\n}"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000070",
+                      "name":  "Publish IG Container",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2700,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\nconst status = item._igPublished ? \u0027success\u0027 : \u0027failed\u0027;\nconst error = item._igPublished ? \u0027\u0027 : (item.ig_error || \u0027Unknown error\u0027);\n\n// POST posting log\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/posting\u0027,\n  body: {\n    content_calendar_id: item.id,\n    platform: \u0027instagram\u0027,\n    status: status,\n    post_url: item.ig_post_id || \u0027\u0027,\n    error: error,\n    date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item: item.topic || \u0027\u0027,\n    area: item.area_id\n  },\n  headers: headers,\n  json: true\n});\n\n// If failed, send Telegram alert\nif (!item._igPublished) {\n  const tgText = \u0027❌ Instagram posting failed — \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\\n\u0027 +\n    \u0027Error: \u0027 + error + \u0027\\n\\n\u0027 +\n    \u0027--- MANUAL POST CAPTION ---\\n\u0027 +\n    item.ig_caption;\n\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n    body: { chat_id: $env.TELEGRAM_CHAT_ID, text: tgText },\n    json: true\n  });\n}\n\nreturn [{ json: { platform: \u0027instagram\u0027, status: status } }];"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000080",
+                      "name":  "Log IG Result",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3000,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Container creation failed entirely\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/posting\u0027,\n  body: {\n    content_calendar_id: item.id,\n    platform: \u0027instagram\u0027,\n    status: \u0027failed\u0027,\n    error: item.ig_error || \u0027Container creation failed\u0027,\n    date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    brand: item.brand,\n    content_type: item.content_type,\n    content_item: item.topic || \u0027\u0027,\n    area: item.area_id\n  },\n  headers: headers,\n  json: true\n});\n\nconst tgText = \u0027❌ Instagram posting failed (container creation) — \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\\n\u0027 +\n  \u0027Error: \u0027 + (item.ig_error || \u0027Unknown\u0027) + \u0027\\n\\n\u0027 +\n  \u0027--- MANUAL POST CAPTION ---\\n\u0027 +\n  item.ig_caption;\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: tgText },\n  json: true\n});\n\nreturn [{ json: { platform: \u0027instagram\u0027, status: \u0027failed\u0027 } }];"
+                                     },
+                      "id":  "1b000000-0001-4000-8000-000000000085",
+                      "name":  "Handle Container Failure",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2700,
+                                       560
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Daily 11:00 IST":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Load Today\u0027s Payload",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Load Today\u0027s Payload":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Validate Payload",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Validate Payload":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Has Payload?",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Has Payload?":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Check GBP Status",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Alert: No Payload",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Check GBP Status":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Evaluate GBP Status",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Evaluate GBP Status":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "GBP Ready?",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "GBP Ready?":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Create IG Container (with retry)",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ],
+                                                        [
+                                                            {
+                                                                "node":  "Alert: GBP Not Ready",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Create IG Container (with retry)":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Container Created?",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Container Created?":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Publish IG Container",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ],
+                                                                [
+                                                                    {
+                                                                        "node":  "Handle Container Failure",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Publish IG Container":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Log IG Result",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "1b-instagram-publisher-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

@@ -1,0 +1,294 @@
+{
+  "name": "WF3: Messenger/IG Inbound \u2192 AI Qualify \u2192 CRM",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF3: Messenger & Instagram DM \u2192 AI Qualify \u2192 CRM\n\n**Prerequisites:**\n1. Credentials: OpenAI API Key (Header Auth), CRM Webhook Auth (Header Auth), Meta Page Token (Header Auth)\n2. n8n Variable: `CRM_API_URL`\n3. In Meta App \u2192 Webhooks \u2192 Page \u2192 subscribe to `messages`\n4. Point webhook URL to this workflow's production URL\n5. Instagram account must be Professional and linked to FB Page\n\n**Note:** Messenger and Instagram DMs arrive through the SAME Page webhook. The Code node auto-detects which platform based on payload structure.\n\n**Flow:** Messenger/IG message \u2192 Parse & detect platform \u2192 AI qualify \u2192 Push lead + message to CRM",
+        "height": 310,
+        "width": 780,
+        "color": 3
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "messenger-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000010",
+      "name": "Messenger/IG Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        460
+      ],
+      "webhookId": "messenger-inbound-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\nconst entry = body.entry?.[0] || {};\nconst messaging = entry.messaging?.[0];\n\nif (!messaging || !messaging.message) {\n  // Not a message event (could be delivery, read receipt, postback, etc.)\n  return [{\n    json: {\n      is_message: false,\n      event_type: messaging?.delivery ? 'delivery' : messaging?.read ? 'read' : 'other'\n    }\n  }];\n}\n\nconst senderId = messaging.sender?.id || '';\nconst recipientId = messaging.recipient?.id || '';\nconst message = messaging.message || {};\n\n// Detect if this is Instagram or Messenger\n// Instagram messages have a different structure and may include\n// 'instagram_business_account' in the entry or different ID formats\nlet channelType = 'messenger';\n\n// Instagram DMs typically come with is_echo or through instagram-specific fields\nif (entry.id && messaging.sender && messaging.recipient) {\n  // Check for Instagram indicators\n  if (body.object === 'instagram' || entry.messaging?.[0]?.sender?.id?.length > 20) {\n    channelType = 'instagram';\n  }\n}\n\n// Extract message content\nlet content = '';\nlet messageType = 'text';\n\nif (message.text) {\n  content = message.text;\n  messageType = 'text';\n} else if (message.attachments && message.attachments.length > 0) {\n  const attachment = message.attachments[0];\n  messageType = attachment.type || 'attachment';\n  content = '[' + messageType + ']';\n  if (attachment.payload?.url) {\n    content += ' ' + attachment.payload.url;\n  }\n} else if (message.sticker_id) {\n  content = '[Sticker]';\n  messageType = 'sticker';\n}\n\nreturn [{\n  json: {\n    is_message: true,\n    channel_type: channelType,\n    platform_user_id: senderId,\n    platform_message_id: message.mid || '',\n    content: content,\n    message_type: messageType,\n    sender_name: '',\n    page_id: recipientId,\n    timestamp: messaging.timestamp || ''\n  }\n}];"
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000020",
+      "name": "Parse Messenger/IG Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_message }}"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000025",
+      "name": "Is Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        560,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json;\n\nconst systemPrompt = [\n  'You are a lead qualification AI for an educational institute that offers:',\n  '- Professional courses: Data Analytics, Python, MERN, Web Dev, AI/ML, etc.',\n  '- Academic tuition: BCA, BSCIT, ICT',\n  '',\n  'Analyze the lead/message and respond ONLY with valid JSON:',\n  '{',\n  '  \"score\": <number 1-10>,',\n  '  \"classification\": \"hot_lead\" | \"warm_lead\" | \"cold_lead\" | \"spam\" | \"not_a_lead\",',\n  '  \"interest_type\": \"Professional\" | \"Academic\" | \"Unknown\",',\n  '  \"course_interest\": \"<extracted course name or empty>\",',\n  '  \"extracted_name\": \"<name if mentioned>\",',\n  '  \"reason\": \"<brief explanation>\",',\n  '  \"suggested_reply\": \"<brief friendly auto-reply in same language as message>\"',\n  '}',\n  '',\n  'Scoring guide:',\n  '- 8-10: Clear course interest, real contact info, specific program mentioned',\n  '- 5-7: General interest, vague details, might need follow-up',\n  '- 3-4: Low quality, incomplete info, unclear intent',\n  '- 1-2: Spam, test submission, or clearly not interested',\n  '',\n  'Note: Messages may be in Hindi, Gujarati, or English. Handle all languages.',\n  'Never mention fees in suggested_reply.'\n].join('\\n');\n\nconst platform = msg.channel_type === 'instagram' ? 'Instagram DM' : 'Facebook Messenger';\nconst userMessage = platform + ' message from user ID: ' + msg.platform_user_id + '\\nMessage: ' + msg.content;\n\nreturn [{\n  json: {\n    ...msg,\n    request_body: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.3,\n      max_tokens: 500,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userMessage }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000030",
+      "name": "Prepare AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000040",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_OPENAI",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst msg = $('Prepare AI Request').first().json;\n\nlet aiText = response.choices?.[0]?.message?.content || '';\naiText = aiText.replace(/```json|```/g, '').trim();\n\nlet ai;\ntry {\n  ai = JSON.parse(aiText);\n} catch (e) {\n  ai = {\n    score: 5,\n    classification: 'warm_lead',\n    interest_type: 'Unknown',\n    course_interest: '',\n    extracted_name: '',\n    reason: 'AI parse error - defaulting to warm',\n    suggested_reply: ''\n  };\n}\n\nconst score = Number(ai.score) || 5;\nconst isInstagram = msg.channel_type === 'instagram';\n\nreturn [{\n  json: {\n    lead_payload: {\n      action: 'create_lead',\n      name: ai.extracted_name || '',\n      source: isInstagram ? 'Instagram DM' : 'Messenger',\n      channel_type: msg.channel_type,\n      entry_type: isInstagram ? 'Instagram DM' : 'Messenger',\n      platform_user_id: msg.platform_user_id,\n      interest_type: ai.interest_type || 'Unknown',\n      course_interest: ai.course_interest || '',\n      notes: 'AI: ' + (ai.reason || ''),\n      ai_score: score,\n      ai_classification: ai.classification || 'warm_lead',\n      source_detail: isInstagram ? 'Instagram DM Inbound' : 'Messenger Inbound'\n    },\n    message_payload: {\n      action: 'create_message',\n      platform_user_id: msg.platform_user_id,\n      channel_type: msg.channel_type,\n      direction: 'inbound',\n      message_type: msg.message_type || 'text',\n      content: msg.content,\n      platform_message_id: msg.platform_message_id,\n      sender_name: msg.sender_name || '',\n      ai_score: score,\n      ai_classification: ai.classification || 'warm_lead'\n    },\n    suggested_reply: ai.suggested_reply || '',\n    ai_score: score,\n    platform_user_id: msg.platform_user_id,\n    channel_type: msg.channel_type,\n    page_id: msg.page_id\n  }\n}];"
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000050",
+      "name": "Build CRM Payloads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.lead_payload }}",
+        "options": {}
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000060",
+      "name": "Push Lead to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Build CRM Payloads').first().json.message_payload }}",
+        "options": {}
+      },
+      "id": "w3a1b2c3-0001-4001-8001-000000000070",
+      "name": "Push Message to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "w3a1b2c3-0001-4001-8001-000000000080",
+      "name": "Not a Message (Skip)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        820,
+        580
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Messenger/IG Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Messenger/IG Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Messenger/IG Payload": {
+      "main": [
+        [
+          {
+            "node": "Is Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Message?": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not a Message (Skip)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Request": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Build CRM Payloads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build CRM Payloads": {
+      "main": [
+        [
+          {
+            "node": "Push Lead to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Lead to CRM": {
+      "main": [
+        [
+          {
+            "node": "Push Message to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "wf3-messenger-ig-inbound-v1",
+  "meta": {
+    "instanceId": "extrabits-crm-inquiry-system"
+  },
+  "tags": [
+    {
+      "name": "CRM Inquiry System"
+    }
+  ],
+  "id": "e2fc97cc-3113-4869-988f-3cef3c386eff"
+}

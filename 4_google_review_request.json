@@ -1,0 +1,186 @@
+{
+    "name":  "4 - Google Review Request",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 4 — Google Review Request\n\n**Schedule:** Daily 17:00 IST\n\n**Prerequisites:**\n1. n8n variables: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `GOOGLE_REVIEW_URL`\n2. WhatsApp approved template: `review_request_v1` (UTILITY category)\n3. Template must have 2 body parameters: student_name, review_url\n\n**Rules:**\n- Send only ONCE per enrolled student\n- Only after 3+ days since enrollment\n- Use WhatsApp approved template only (no free-form)\n\n**Flow:** Cron → Fetch eligible leads → Loop → Send WhatsApp template → Update lead → Log posting → Summary",
+                                         "height":  280,
+                                         "width":  780,
+                                         "color":  5
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -60
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cronExpression",
+                                                                           "expression":  "0 17 * * *"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000010",
+                      "name":  "Daily 17:00 IST",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Calculate date 3 days ago\nconst now = new Date();\nconst threeDaysAgo = new Date(now);\nthreeDaysAgo.setDate(threeDaysAgo.getDate() - 3);\nconst cutoffDate = threeDaysAgo.toISOString().split(\u0027T\u0027)[0];\n\ntry {\n  const leadsResp = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: CRM + \u0027/api/leads?enrolled=1\u0026review_requested=\u0026enrollment_date_before=\u0027 + cutoffDate,\n    headers: headers,\n    json: true\n  });\n\n  let leads = leadsResp.data || [];\n  if (!Array.isArray(leads)) leads = [leads];\n\n  // Filter: enrolled=true, review_requested is empty/not \u0027sent\u0027, enrollment_date \u003c= 3 days ago\n  leads = leads.filter(lead =\u003e {\n    const enrolled = lead.enrolled == 1 || lead.enrolled === true;\n    const notRequested = !lead.review_requested || lead.review_requested !== \u0027sent\u0027;\n    const enrolledLongEnough = lead.enrollment_date \u0026\u0026 new Date(lead.enrollment_date) \u003c= threeDaysAgo;\n    return enrolled \u0026\u0026 notRequested \u0026\u0026 enrolledLongEnough;\n  });\n\n  if (leads.length === 0) {\n    return [{ json: { _hasLeads: false, leads: [], total: 0 } }];\n  }\n\n  return [{ json: { _hasLeads: true, leads: leads, total: leads.length } }];\n} catch(e) {\n  return [{ json: { _hasLeads: false, leads: [], total: 0, error: e.message } }];\n}"
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000020",
+                      "name":  "Fetch Eligible Students",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._hasLeads }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000030",
+                      "name":  "Has Eligible Leads?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000035",
+                      "name":  "No Leads Today",
+                      "type":  "n8n-nodes-base.noOp",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1000,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const data = $input.first().json;\nconst leads = data.leads;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst crmHeaders = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\nconst today = $now.toFormat(\u0027yyyy-MM-dd\u0027);\n\nlet sentCount = 0;\nlet failedCount = 0;\nconst failedNames = [];\n\nfor (const lead of leads) {\n  if (!lead.phone) {\n    failedCount++;\n    failedNames.push(lead.student_name + \u0027 (no phone)\u0027);\n    continue;\n  }\n\n  try {\n    // Send WhatsApp approved template\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.WHATSAPP_PHONE_NUMBER_ID + \u0027/messages\u0027,\n      headers: {\n        \u0027Authorization\u0027: \u0027Bearer \u0027 + $env.WHATSAPP_ACCESS_TOKEN,\n        \u0027Content-Type\u0027: \u0027application/json\u0027\n      },\n      body: {\n        messaging_product: \u0027whatsapp\u0027,\n        to: lead.phone,\n        type: \u0027template\u0027,\n        template: {\n          name: \u0027review_request_v1\u0027,\n          language: { code: \u0027en\u0027 },\n          components: [\n            {\n              type: \u0027body\u0027,\n              parameters: [\n                { type: \u0027text\u0027, text: lead.student_name || \u0027Student\u0027 },\n                { type: \u0027text\u0027, text: $env.GOOGLE_REVIEW_URL || \u0027\u0027 }\n              ]\n            }\n          ]\n        }\n      },\n      json: true\n    });\n\n    // Update lead: review_requested = sent\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: CRM + \u0027/api/leads\u0027,\n      body: {\n        phone: lead.phone,\n        review_requested: \u0027sent\u0027,\n        review_request_date: today\n      },\n      headers: crmHeaders,\n      json: true\n    });\n\n    // Log to posting\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: CRM + \u0027/api/posting\u0027,\n      body: {\n        platform: \u0027whatsapp_review\u0027,\n        status: \u0027sent\u0027,\n        date: today,\n        brand: \u0027extrabits_academy\u0027,\n        content_item: lead.student_name || \u0027\u0027,\n        area: \u0027\u0027\n      },\n      headers: crmHeaders,\n      json: true\n    });\n\n    sentCount++;\n\n  } catch (error) {\n    failedCount++;\n    failedNames.push(lead.student_name + \u0027 (\u0027 + lead.phone + \u0027)\u0027);\n\n    // Telegram alert for failures\n    try {\n      await this.helpers.httpRequest({\n        method: \u0027POST\u0027,\n        url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n        body: {\n          chat_id: $env.TELEGRAM_CHAT_ID,\n          text: \u0027⚠️ Review request failed for \u0027 + (lead.student_name || \u0027Unknown\u0027) + \u0027 (\u0027 + lead.phone + \u0027)\u0027\n        },\n        json: true\n      });\n    } catch(tgErr) {}\n  }\n}\n\nreturn [{ json: { sent: sentCount, failed: failedCount, failedNames: failedNames } }];"
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000040",
+                      "name":  "Send Review Requests (Loop)",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1000,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const result = $input.first().json;\n\nconst summaryText = \u0027⭐ Review Requests Summary — \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\\n\\n\u0027 +\n  \u0027✅ Sent: \u0027 + result.sent + \u0027 students contacted\\n\u0027 +\n  (result.failed \u003e 0 ? \u0027❌ Failed: \u0027 + result.failed + \u0027\\n\u0027 + \u0027Failed: \u0027 + result.failedNames.join(\u0027, \u0027) : \u0027🎉 All successful!\u0027) +\n  \u0027\\n\\nStudents will receive the review request via WhatsApp.\u0027;\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: summaryText },\n  json: true\n});\n\nreturn [{ json: { status: \u0027complete\u0027, ...result } }];"
+                                     },
+                      "id":  "40000000-0001-4000-8000-000000000050",
+                      "name":  "Send Summary",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1320,
+                                       400
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Daily 17:00 IST":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Fetch Eligible Students",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Fetch Eligible Students":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Has Eligible Leads?",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Has Eligible Leads?":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Send Review Requests (Loop)",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ],
+                                                                 [
+                                                                     {
+                                                                         "node":  "No Leads Today",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Send Review Requests (Loop)":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Send Summary",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "4-google-review-request-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

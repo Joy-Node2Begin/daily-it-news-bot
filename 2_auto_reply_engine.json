@@ -1,0 +1,370 @@
+{
+    "name":  "2 - Auto-Reply Engine",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 2 — WhatsApp + Instagram Auto-Reply Engine\n\n**Trigger:** Webhook POST at `/auto-reply`\n**Sources:** WhatsApp Business Cloud API + Instagram DM via Meta webhook\n\n**Prerequisites:**\n1. n8n variables: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `META_ACCESS_TOKEN`\n2. n8n variables: `ACADEMY_PHONE`, `ACADEMY_ADDRESS`\n3. Configure Meta webhook to point to: `{WEBHOOK_URL}/webhook/auto-reply`\n4. Escalation at 3+ bot replies\n\n**Rules:**\n- Never reveal fees automatically\n- Reply only after user messages first\n- Escalate to human after 3 bot replies\n\n**Flow:** Webhook → Detect source → Parse payload → Escalation check → Detect intent → Fetch template → Score lead → Send reply → Upsert lead → Notify admin",
+                                         "height":  360,
+                                         "width":  880,
+                                         "color":  7
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -80
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "auto-reply",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000010",
+                      "name":  "Webhook: Auto-Reply",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ],
+                      "webhookId":  "auto-reply-webhook"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first().json.body || $input.first().json;\n\nlet source = \u0027\u0027;\nlet message_text = \u0027\u0027;\nlet sender_phone = \u0027\u0027;\nlet sender_name = \u0027\u0027;\nlet sender_instagram_user_id = \u0027\u0027;\n\n// Detect WhatsApp\nif (body.entry \u0026\u0026 body.entry[0] \u0026\u0026 body.entry[0].changes \u0026\u0026\n    body.entry[0].changes[0] \u0026\u0026 body.entry[0].changes[0].value \u0026\u0026\n    body.entry[0].changes[0].value.messages \u0026\u0026\n    body.entry[0].changes[0].value.messages.length \u003e 0) {\n\n  source = \u0027whatsapp\u0027;\n  const msg = body.entry[0].changes[0].value.messages[0];\n  message_text = (msg.type === \u0027text\u0027 \u0026\u0026 msg.text) ? msg.text.body : \u0027[non-text message]\u0027;\n  sender_phone = msg.from || \u0027\u0027;\n  const contacts = body.entry[0].changes[0].value.contacts;\n  sender_name = (contacts \u0026\u0026 contacts[0] \u0026\u0026 contacts[0].profile) ? contacts[0].profile.name : \u0027\u0027;\n\n// Detect Instagram DM\n} else if (body.entry \u0026\u0026 body.entry[0] \u0026\u0026 body.entry[0].messaging \u0026\u0026\n           body.entry[0].messaging.length \u003e 0) {\n\n  source = \u0027instagram_dm\u0027;\n  const messaging = body.entry[0].messaging[0];\n  sender_instagram_user_id = messaging.sender ? messaging.sender.id : \u0027\u0027;\n  message_text = (messaging.message \u0026\u0026 messaging.message.text) ? messaging.message.text : \u0027[non-text message]\u0027;\n  sender_name = \u0027Instagram User\u0027;\n\n} else {\n  // Neither — likely a delivery/read receipt, ignore\n  source = \u0027ignore\u0027;\n}\n\nreturn [{\n  json: {\n    source,\n    message_text,\n    sender_phone,\n    sender_name,\n    sender_instagram_user_id,\n    _isValid: (source === \u0027whatsapp\u0027 || source === \u0027instagram_dm\u0027)\n  }\n}];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000020",
+                      "name":  "Detect Source \u0026 Parse",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "options":  {
+
+                                                     },
+                                         "respondWith":  "json",
+                                         "responseBody":  "={{ { status: \u0027ok\u0027 } }}",
+                                         "responseCode":  200
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000025",
+                      "name":  "Return 200 OK",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._isValid }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000030",
+                      "name":  "Is Valid Message?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       980,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000035",
+                      "name":  "Ignore (Receipt/Echo)",
+                      "type":  "n8n-nodes-base.noOp",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1260,
+                                       620
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Look up existing lead\nlet existingLead = null;\nlet botReplyCount = 0;\n\ntry {\n  let lookupUrl;\n  if (item.source === \u0027whatsapp\u0027) {\n    lookupUrl = CRM + \u0027/api/leads?phone=\u0027 + encodeURIComponent(item.sender_phone);\n  } else {\n    lookupUrl = CRM + \u0027/api/leads?instagram_user_id=\u0027 + encodeURIComponent(item.sender_instagram_user_id);\n  }\n\n  const leadResp = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: lookupUrl,\n    headers: headers,\n    json: true\n  });\n\n  if (leadResp.data) {\n    existingLead = Array.isArray(leadResp.data) ? leadResp.data[0] : leadResp.data;\n    botReplyCount = existingLead ? (parseInt(existingLead.bot_reply_count) || 0) : 0;\n  }\n} catch(e) {}\n\nconst needsEscalation = botReplyCount \u003e= 3;\n\nreturn [{\n  json: {\n    ...item,\n    existing_lead: existingLead,\n    bot_reply_count: botReplyCount,\n    existing_lead_score: existingLead ? existingLead.lead_score : null,\n    _needsEscalation: needsEscalation\n  }\n}];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000040",
+                      "name":  "Escalation Check",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1260,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._needsEscalation }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000045",
+                      "name":  "Needs Escalation?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1540,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\nconst escalationReply = \u0027Thank you for your patience! Our counselor will assist you shortly. 😊\u0027;\n\n// Send escalation reply\nif (item.source === \u0027whatsapp\u0027) {\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.WHATSAPP_PHONE_NUMBER_ID + \u0027/messages\u0027,\n    headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + $env.WHATSAPP_ACCESS_TOKEN, \u0027Content-Type\u0027: \u0027application/json\u0027 },\n    body: {\n      messaging_product: \u0027whatsapp\u0027,\n      to: item.sender_phone,\n      type: \u0027text\u0027,\n      text: { body: escalationReply }\n    },\n    json: true\n  });\n} else {\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.facebook.com/v19.0/me/messages\u0027,\n    headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + $vars.META_ACCESS_TOKEN, \u0027Content-Type\u0027: \u0027application/json\u0027 },\n    body: {\n      recipient: { id: item.sender_instagram_user_id },\n      message: { text: escalationReply }\n    },\n    json: true\n  });\n}\n\n// Urgent Telegram alert\nconst contactInfo = item.source === \u0027whatsapp\u0027 ? \u0027Phone: \u0027 + item.sender_phone : \u0027IG ID: \u0027 + item.sender_instagram_user_id;\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: {\n    chat_id: $env.TELEGRAM_CHAT_ID,\n    text: \u0027🚨 ESCALATION: \u0027 + item.sender_name + \u0027 has received 3+ bot replies. Manual follow-up needed NOW.\\n\u0027 + contactInfo + \u0027\\nSource: \u0027 + item.source + \u0027\\nLast message: \u0027 + item.message_text\n  },\n  json: true\n});\n\n// Update lead status to escalated\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: CRM + \u0027/api/leads\u0027,\n  body: {\n    phone: item.sender_phone || undefined,\n    instagram_user_id: item.sender_instagram_user_id || undefined,\n    follow_up_status: \u0027escalated\u0027\n  },\n  headers: headers,\n  json: true\n});\n\nreturn [{ json: { status: \u0027escalated\u0027, sender: item.sender_name } }];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000050",
+                      "name":  "Handle Escalation",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1820,
+                                       260
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst text = (item.message_text || \u0027\u0027).toLowerCase();\n\n// Intent detection via keyword matching\nlet intent = \u0027general_enquiry\u0027;\nlet sla_time = \u0027within 24 hours\u0027;\n\nconst feesKeywords = [\u0027fee\u0027, \u0027fees\u0027, \u0027price\u0027, \u0027cost\u0027, \u0027charges\u0027, \u0027kitna\u0027, \u0027paisa\u0027, \u0027rupee\u0027, \u0027rupees\u0027];\nconst courseKeywords = [\u0027course\u0027, \u0027learn\u0027, \u0027learning\u0027, \u0027training\u0027, \u0027class\u0027, \u0027enroll\u0027, \u0027join\u0027, \u0027admission\u0027, \u0027batch\u0027];\nconst locationKeywords = [\u0027where\u0027, \u0027location\u0027, \u0027address\u0027, \u0027kahan\u0027, \u0027place\u0027, \u0027office\u0027, \u0027center\u0027, \u0027centre\u0027];\nconst timingKeywords = [\u0027time\u0027, \u0027timing\u0027, \u0027batch\u0027, \u0027schedule\u0027, \u0027kab\u0027, \u0027when\u0027, \u0027start\u0027, \u0027morning\u0027, \u0027evening\u0027];\n\nif (feesKeywords.some(kw =\u003e text.includes(kw))) {\n  intent = \u0027fees_question\u0027;\n  sla_time = \u0027within 1 hour\u0027;\n} else if (courseKeywords.some(kw =\u003e text.includes(kw))) {\n  intent = \u0027course_enquiry\u0027;\n  sla_time = \u0027within 4 hours\u0027;\n} else if (locationKeywords.some(kw =\u003e text.includes(kw))) {\n  intent = \u0027location_enquiry\u0027;\n  sla_time = \u0027within 4 hours\u0027;\n} else if (timingKeywords.some(kw =\u003e text.includes(kw))) {\n  intent = \u0027batch_timing\u0027;\n  sla_time = \u0027within 4 hours\u0027;\n}\n\n// Lead scoring — never downgrade\nlet lead_score = \u0027Cold\u0027;\nif (intent === \u0027fees_question\u0027) {\n  lead_score = \u0027Hot\u0027;\n} else if ([\u0027course_enquiry\u0027, \u0027location_enquiry\u0027, \u0027batch_timing\u0027].includes(intent)) {\n  lead_score = \u0027Warm\u0027;\n}\n\n// Never downgrade existing lead score\nconst existingScore = item.existing_lead_score;\nif (existingScore === \u0027Hot\u0027) {\n  lead_score = \u0027Hot\u0027;\n} else if (existingScore === \u0027Warm\u0027 \u0026\u0026 lead_score === \u0027Cold\u0027) {\n  lead_score = \u0027Warm\u0027;\n}\n\n// Try to extract course name from message\nconst courseNames = [\u0027python\u0027, \u0027java\u0027, \u0027react\u0027, \u0027node\u0027, \u0027mern\u0027, \u0027web\u0027, \u0027flutter\u0027, \u0027android\u0027, \u0027ios\u0027,\n  \u0027data science\u0027, \u0027data analytics\u0027, \u0027machine learning\u0027, \u0027ai\u0027, \u0027ui\u0027, \u0027ux\u0027, \u0027graphic design\u0027,\n  \u0027digital marketing\u0027, \u0027seo\u0027, \u0027laravel\u0027, \u0027php\u0027, \u0027wordpress\u0027, \u0027c++\u0027, \u0027c#\u0027, \u0027bca\u0027, \u0027bsc\u0027];\nlet detectedCourse = \u0027our IT courses\u0027;\nfor (const course of courseNames) {\n  if (text.includes(course)) {\n    detectedCourse = course.charAt(0).toUpperCase() + course.slice(1);\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    intent,\n    lead_score,\n    sla_time,\n    detected_course: detectedCourse\n  }\n}];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000060",
+                      "name":  "Detect Intent \u0026 Score",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1820,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Fetch reply templates from CRM\nlet templates = [];\ntry {\n  const tplResp = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: CRM + \u0027/api/templates\u0027,\n    headers: headers,\n    json: true\n  });\n  templates = tplResp.data || [];\n  if (!Array.isArray(templates)) templates = [templates];\n} catch(e) {}\n\n// Find matching template\nlet replyTemplate = \u0027\u0027;\nconst match = templates.find(t =\u003e t.intent === item.intent);\nif (match) {\n  replyTemplate = match.reply_template || \u0027\u0027;\n} else {\n  // Fallback for general enquiry\n  replyTemplate = \u0027Thanks for reaching out to ExtraBits Academy! We offer 34+ IT courses across web development, AI/ML, mobile development, design, and more. Visit us for a FREE demo class.\u0027;\n}\n\n// Replace template variables\nlet replyText = replyTemplate\n  .replace(/\\{\\{course\\}\\}/g, item.detected_course || \u0027our IT courses\u0027)\n  .replace(/\\{\\{phone\\}\\}/g, $vars.ACADEMY_PHONE || \u0027\u0027)\n  .replace(/\\{\\{address\\}\\}/g, $vars.ACADEMY_ADDRESS || \u0027\u0027);\n\nreturn [{ json: { ...item, reply_text: replyText } }];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000070",
+                      "name":  "Fetch Template \u0026 Build Reply",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2120,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Send reply based on source\ntry {\n  if (item.source === \u0027whatsapp\u0027) {\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: \u0027https://graph.facebook.com/v19.0/\u0027 + $env.WHATSAPP_PHONE_NUMBER_ID + \u0027/messages\u0027,\n      headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + $env.WHATSAPP_ACCESS_TOKEN, \u0027Content-Type\u0027: \u0027application/json\u0027 },\n      body: {\n        messaging_product: \u0027whatsapp\u0027,\n        to: item.sender_phone,\n        type: \u0027text\u0027,\n        text: { body: item.reply_text }\n      },\n      json: true\n    });\n  } else if (item.source === \u0027instagram_dm\u0027) {\n    await this.helpers.httpRequest({\n      method: \u0027POST\u0027,\n      url: \u0027https://graph.facebook.com/v19.0/me/messages\u0027,\n      headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + $vars.META_ACCESS_TOKEN, \u0027Content-Type\u0027: \u0027application/json\u0027 },\n      body: {\n        recipient: { id: item.sender_instagram_user_id },\n        message: { text: item.reply_text }\n      },\n      json: true\n    });\n  }\n  return [{ json: { ...item, _replySent: true } }];\n} catch (error) {\n  return [{ json: { ...item, _replySent: false, _replyError: error.message } }];\n}"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000080",
+                      "name":  "Send Reply",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2420,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\nconst newBotCount = (item.bot_reply_count || 0) + 1;\nconst isNewLead = !item.existing_lead;\n\n// Build lead upsert body\nconst leadBody = {\n  source: item.source,\n  student_name: item.sender_name,\n  last_message: item.message_text,\n  lead_score: item.lead_score,\n  follow_up_status: \u0027pending\u0027,\n  bot_reply_count: newBotCount\n};\n\n// Source-specific fields\nif (item.source === \u0027whatsapp\u0027) {\n  leadBody.phone = item.sender_phone;\n} else {\n  leadBody.instagram_user_id = item.sender_instagram_user_id;\n}\n\n// First message only stored in \u0027message\u0027 field\nif (isNewLead) {\n  leadBody.message = item.message_text;\n}\n\n// Course interest if detected\nif (item.detected_course \u0026\u0026 item.detected_course !== \u0027our IT courses\u0027) {\n  leadBody.course_interest = item.detected_course;\n}\n\ntry {\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: CRM + \u0027/api/leads\u0027,\n    body: leadBody,\n    headers: headers,\n    json: true\n  });\n} catch(e) {}\n\nreturn [{ json: { ...item, bot_reply_count: newBotCount, _leadUpserted: true } }];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000090",
+                      "name":  "Upsert Lead",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2720,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\n\n// Only notify admin for high-intent leads\nconst highIntent = (item.intent === \u0027fees_question\u0027 || item.intent === \u0027course_enquiry\u0027);\n\nif (!highIntent) {\n  return [{ json: { status: \u0027complete\u0027, notified: false } }];\n}\n\nconst contactInfo = item.source === \u0027whatsapp\u0027\n  ? \u0027Phone: \u0027 + item.sender_phone\n  : \u0027IG User ID: \u0027 + item.sender_instagram_user_id;\n\nconst tgText = \u0027🔥 \u0027 + item.lead_score + \u0027 LEAD: \u0027 + item.sender_name + \u0027\\n\u0027 +\n  \u0027Source: \u0027 + item.source + \u0027\\n\u0027 +\n  \u0027Message: \u0027 + item.message_text + \u0027\\n\u0027 +\n  \u0027Intent: \u0027 + item.intent + \u0027\\n\u0027 +\n  \u0027Follow-up SLA: \u0027 + item.sla_time + \u0027\\n\u0027 +\n  contactInfo + \u0027\\n\\n\u0027 +\n  \u0027Reply within target time!\u0027;\n\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: tgText },\n  json: true\n});\n\nreturn [{ json: { status: \u0027complete\u0027, notified: true, lead_score: item.lead_score } }];"
+                                     },
+                      "id":  "20000000-0001-4000-8000-000000000100",
+                      "name":  "Notify Admin (High Intent)",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       3020,
+                                       520
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Webhook: Auto-Reply":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Detect Source \u0026 Parse",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Detect Source \u0026 Parse":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Return 200 OK",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Return 200 OK":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Is Valid Message?",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Is Valid Message?":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Escalation Check",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ],
+                                                               [
+                                                                   {
+                                                                       "node":  "Ignore (Receipt/Echo)",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Escalation Check":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Needs Escalation?",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Needs Escalation?":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Handle Escalation",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ],
+                                                               [
+                                                                   {
+                                                                       "node":  "Detect Intent \u0026 Score",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Detect Intent \u0026 Score":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Fetch Template \u0026 Build Reply",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Fetch Template \u0026 Build Reply":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Send Reply",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                        "Send Reply":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Upsert Lead",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Upsert Lead":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Notify Admin (High Intent)",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "2-auto-reply-engine-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

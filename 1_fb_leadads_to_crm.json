@@ -1,0 +1,233 @@
+{
+  "name": "WF1: FB Lead Ads \u2192 AI Qualify \u2192 CRM",
+  "id": "1",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF1: Facebook Lead Ads \u2192 AI Qualify \u2192 CRM\n\n**Prerequisites:**\n1. Create credentials: Facebook Lead Ads API, OpenAI API Key (Header Auth), CRM Webhook Auth (Header Auth)\n2. Set n8n variable: `CRM_API_URL` = `https://yourdomain.com`\n3. OpenAI Header Auth \u2192 Name: `Authorization`, Value: `Bearer sk-YOUR_KEY`\n4. CRM Header Auth \u2192 Name: `Authorization`, Value: `Bearer YOUR_INQUIRY_WEBHOOK_SECRET`\n\n**Flow:** FB Lead Ad submitted \u2192 Extract fields \u2192 AI scores lead \u2192 If score \u2265 3 \u2192 Push to CRM",
+        "height": 270,
+        "width": 780,
+        "color": 4
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        20
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "f0a1b2c3-0001-4001-8001-000000000010",
+      "name": "FB Lead Ads Trigger",
+      "type": "n8n-nodes-base.facebookLeadAdsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "credentials": {
+        "facebookLeadAdsApi": {
+          "id": "CHANGE_ME_FB",
+          "name": "Facebook Lead Ads"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.first().json;\n\n// Extract fields from FB Lead Ads field_data array\nconst fieldData = lead.field_data || [];\nconst getField = (...names) => {\n  for (const name of names) {\n    const field = fieldData.find(f =>\n      f.name.toLowerCase().includes(name.toLowerCase())\n    );\n    if (field && field.values && field.values[0]) return field.values[0];\n  }\n  return '';\n};\n\nconst name = getField('full_name', 'first_name', 'name');\nconst email = getField('email');\nlet phone = getField('phone_number', 'phone', 'mobile');\nconst courseInterest = getField('course', 'program', 'interested');\n\n// Clean phone number \u2013 remove special chars, strip +91 country code\nphone = phone.replace(/[\\s\\-\\(\\)\\+]/g, '');\nif (phone.startsWith('91') && phone.length > 10) phone = phone.substring(2);\nphone = phone.slice(-10);\n\n// --- AI System Prompt ---\nconst systemPrompt = [\n  'You are a lead qualification AI for an educational institute that offers:',\n  '- Professional courses: Data Analytics, Python, MERN, Web Dev, AI/ML, etc.',\n  '- Academic tuition: BCA, BSCIT, ICT',\n  '',\n  'Analyze the lead/message and respond ONLY with valid JSON:',\n  '{',\n  '  \"score\": <number 1-10>,',\n  '  \"classification\": \"hot_lead\" | \"warm_lead\" | \"cold_lead\" | \"spam\" | \"not_a_lead\",',\n  '  \"interest_type\": \"Professional\" | \"Academic\" | \"Unknown\",',\n  '  \"course_interest\": \"<extracted course name or empty>\",',\n  '  \"extracted_name\": \"<name if mentioned>\",',\n  '  \"reason\": \"<brief explanation>\",',\n  '  \"suggested_reply\": \"<brief friendly auto-reply in same language as message>\"',\n  '}',\n  '',\n  'Scoring guide:',\n  '- 8-10: Clear course interest, real contact info, specific program mentioned',\n  '- 5-7: General interest, vague details, might need follow-up',\n  '- 3-4: Low quality, incomplete info, unclear intent',\n  '- 1-2: Spam, test submission, or clearly not interested',\n  '',\n  'Note: Messages may be in Hindi, Gujarati, or English. Handle all languages.',\n  'Never mention fees in suggested_reply.'\n].join('\\n');\n\nconst userMessage = 'Lead from Facebook Lead Ad form submission:\\nName: ' + name + '\\nEmail: ' + email + '\\nPhone: ' + phone + '\\nCourse Interest: ' + courseInterest;\n\nreturn [{\n  json: {\n    name,\n    email,\n    mobile: phone,\n    course_interest: courseInterest,\n    platform_lead_id: lead.id || '',\n    form_id: lead.form_id || '',\n    source_detail: 'FB Form: ' + (lead.form_name || lead.form_id || 'Lead Ad'),\n    request_body: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.3,\n      max_tokens: 500,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userMessage }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000020",
+      "name": "Extract & Prepare AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000030",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_OPENAI",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst lead = $('Extract & Prepare AI Request').first().json;\n\nlet aiText = response.choices?.[0]?.message?.content || '';\naiText = aiText.replace(/```json|```/g, '').trim();\n\nlet ai;\ntry {\n  ai = JSON.parse(aiText);\n} catch (e) {\n  ai = {\n    score: 5,\n    classification: 'warm_lead',\n    interest_type: 'Unknown',\n    course_interest: lead.course_interest || '',\n    extracted_name: lead.name || '',\n    reason: 'AI parse error - defaulting to warm lead',\n    suggested_reply: ''\n  };\n}\n\nconst score = Number(ai.score) || 5;\n\nreturn [{\n  json: {\n    action: 'create_lead',\n    name: ai.extracted_name || lead.name,\n    mobile: lead.mobile,\n    email: lead.email,\n    source: 'Facebook Lead Ad',\n    channel_type: 'facebook_leadads',\n    entry_type: 'Facebook Lead',\n    platform_lead_id: lead.platform_lead_id,\n    interest_type: ai.interest_type || 'Unknown',\n    course_interest: ai.course_interest || lead.course_interest || '',\n    notes: 'AI: ' + (ai.reason || ''),\n    ai_score: score,\n    ai_classification: ai.classification || 'warm_lead',\n    source_detail: lead.source_detail,\n    should_create_lead: score >= 3\n  }\n}];"
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000040",
+      "name": "Process AI & Build Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_create_lead }}"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000050",
+      "name": "Qualified?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { action: $json.action, name: $json.name, mobile: $json.mobile, email: $json.email, source: $json.source, channel_type: $json.channel_type, entry_type: $json.entry_type, platform_lead_id: $json.platform_lead_id, interest_type: $json.interest_type, course_interest: $json.course_interest, notes: $json.notes, ai_score: $json.ai_score, ai_classification: $json.ai_classification, source_detail: $json.source_detail } }}",
+        "options": {}
+      },
+      "id": "f0a1b2c3-0001-4001-8001-000000000060",
+      "name": "Push to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "f0a1b2c3-0001-4001-8001-000000000070",
+      "name": "Log Skipped (Spam/Low Score)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        560
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "FB Lead Ads Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract & Prepare AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Prepare AI Request": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Process AI & Build Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI & Build Payload": {
+      "main": [
+        [
+          {
+            "node": "Qualified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualified?": {
+      "main": [
+        [
+          {
+            "node": "Push to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skipped (Spam/Low Score)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "wf1-fb-leadads-to-crm-v1",
+  "meta": {
+    "instanceId": "extrabits-crm-inquiry-system"
+  },
+  "tags": [
+    {
+      "name": "CRM Inquiry System"
+    }
+  ]
+}

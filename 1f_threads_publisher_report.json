@@ -1,0 +1,257 @@
+{
+    "name":  "1F - Threads Publisher + Daily Report",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 1F — Threads Publisher + Daily Report\n\n**Schedule:** Daily 16:00 IST\n\n**Prerequisites:**\n1. n8n variables: `THREADS_USER_ID`, `THREADS_ACCESS_TOKEN`, `META_ACCESS_TOKEN`\n2. Threads publishing requires 30s wait between container creation and publishing\n3. Daily report always runs, even if Threads fails\n\n**Flow:** Cron → Load payload → Threads publish (or fallback) → Update calendar status → Build \u0026 send daily report",
+                                         "height":  240,
+                                         "width":  780,
+                                         "color":  2
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000001",
+                      "name":  "📋 Setup Instructions",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -60,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cronExpression",
+                                                                           "expression":  "0 16 * * *"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000010",
+                      "name":  "Daily 16:00 IST",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       100,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "={{ $env.CRM_API_URL + \u0027/api/content?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\u0026with_payload=1\u0027 }}",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000020",
+                      "name":  "Load Today\u0027s Payload",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       400,
+                                       400
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "CHANGE_ME_CRM",
+                                                                 "name":  "CRM API Auth"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const response = $input.first().json;\nconst data = response.data;\n\nif (!data || (Array.isArray(data) \u0026\u0026 data.length === 0)) {\n  return [{ json: { _hasPayload: false, _skipToReport: true } }];\n}\n\nconst row = Array.isArray(data) ? data[0] : data;\nlet payload = {};\nif (row.prepared_payload) {\n  try { payload = JSON.parse(row.prepared_payload); } catch(e) {}\n}\n\nreturn [{ json: { ...row, ...payload, _hasPayload: true, _skipToReport: false } }];"
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000025",
+                      "name":  "Validate Payload",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       700,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "boolean":  [
+                                                                            {
+                                                                                "value1":  "={{ $json._hasPayload }}"
+                                                                            }
+                                                                        ],
+                                                            "combinator":  "and",
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  1
+                                                                        }
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000030",
+                      "name":  "Has Payload?",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       980,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Check GBP status first\nlet gbpReady = false;\ntry {\n  const gbpResult = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: CRM + \u0027/api/posting?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\u0026platform=gbp\u0027,\n    headers: headers,\n    json: true\n  });\n  const gbpData = gbpResult.data;\n  const gbpStatus = gbpData ? (Array.isArray(gbpData) \u0026\u0026 gbpData.length \u003e 0 ? gbpData[0].status : gbpData.status) : \u0027\u0027;\n  gbpReady = (gbpStatus === \u0027success\u0027 || gbpStatus === \u0027manual_backup_sent\u0027);\n} catch(e) {}\n\nif (!gbpReady) {\n  return [{ json: { ...item, _threadsStatus: \u0027skipped\u0027, _threadsMessage: \u0027GBP not ready\u0027 } }];\n}\n\n// Check Threads permissions\ntry {\n  const permCheck = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: \u0027https://graph.threads.net/v1.0/\u0027 + $env.THREADS_USER_ID + \u0027?fields=threads_publishing_limit\u0026access_token=\u0027 + $env.THREADS_ACCESS_TOKEN,\n    json: true\n  });\n  // If permission denied or limit reached\n  if (permCheck.error) {\n    throw new Error(permCheck.error.message || \u0027Permission denied\u0027);\n  }\n} catch (permError) {\n  // Fallback to manual\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: CRM + \u0027/api/posting\u0027,\n    body: {\n      content_calendar_id: item.id, platform: \u0027threads\u0027, status: \u0027failed\u0027,\n      error: \u0027Permission check failed: \u0027 + permError.message,\n      date: $now.toFormat(\u0027yyyy-MM-dd\u0027), brand: item.brand,\n      content_type: item.content_type, content_item: item.topic || \u0027\u0027, area: item.area_id\n    },\n    headers: headers, json: true\n  });\n\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n    body: {\n      chat_id: $env.TELEGRAM_CHAT_ID,\n      text: \u0027📱 Threads manual post required:\\n\\n\u0027 + item.threads_caption + \u0027\\n\\nImage: \u0027 + (item.direct_image_url || item.image_url || \u0027\u0027)\n    },\n    json: true\n  });\n\n  return [{ json: { ...item, _threadsStatus: \u0027failed\u0027, _threadsMessage: \u0027Manual fallback sent\u0027 } }];\n}\n\n// Create Threads container\ntry {\n  const containerResp = await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.threads.net/v1.0/\u0027 + $env.THREADS_USER_ID + \u0027/threads\u0027,\n    body: {\n      media_type: \u0027IMAGE\u0027,\n      image_url: item.meta_image_url || item.direct_image_url,\n      text: item.threads_caption,\n      access_token: $env.THREADS_ACCESS_TOKEN\n    },\n    json: true\n  });\n\n  if (!containerResp.id) throw new Error(\u0027No container ID returned\u0027);\n\n  // Wait 30 seconds (Threads requirement)\n  await new Promise(resolve =\u003e setTimeout(resolve, 30000));\n\n  // Publish\n  const publishResp = await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://graph.threads.net/v1.0/\u0027 + $env.THREADS_USER_ID + \u0027/threads_publish\u0027,\n    body: {\n      creation_id: containerResp.id,\n      access_token: $env.THREADS_ACCESS_TOKEN\n    },\n    json: true\n  });\n\n  // Log success\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: CRM + \u0027/api/posting\u0027,\n    body: {\n      content_calendar_id: item.id, platform: \u0027threads\u0027, status: \u0027success\u0027,\n      post_url: publishResp.id || \u0027\u0027, date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n      brand: item.brand, content_type: item.content_type,\n      content_item: item.topic || \u0027\u0027, area: item.area_id\n    },\n    headers: headers, json: true\n  });\n\n  return [{ json: { ...item, _threadsStatus: \u0027success\u0027, _threadsMessage: \u0027Published\u0027 } }];\n\n} catch (pubError) {\n  // Publish failed — manual fallback\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: CRM + \u0027/api/posting\u0027,\n    body: {\n      content_calendar_id: item.id, platform: \u0027threads\u0027, status: \u0027failed\u0027,\n      error: pubError.message, date: $now.toFormat(\u0027yyyy-MM-dd\u0027),\n      brand: item.brand, content_type: item.content_type,\n      content_item: item.topic || \u0027\u0027, area: item.area_id\n    },\n    headers: headers, json: true\n  });\n\n  await this.helpers.httpRequest({\n    method: \u0027POST\u0027,\n    url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n    body: {\n      chat_id: $env.TELEGRAM_CHAT_ID,\n      text: \u0027📱 Threads manual post required:\\n\\n\u0027 + item.threads_caption + \u0027\\n\\nImage: \u0027 + (item.direct_image_url || item.image_url || \u0027\u0027)\n    },\n    json: true\n  });\n\n  return [{ json: { ...item, _threadsStatus: \u0027failed\u0027, _threadsMessage: \u0027Manual fallback sent\u0027 } }];\n}"
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000040",
+                      "name":  "Publish Threads (with fallback)",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1260,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\nif (!item.id) {\n  return [{ json: { _statusUpdated: false, message: \u0027No content ID to update\u0027 } }];\n}\n\n// Fetch all postings for this content item\ntry {\n  const postingsResp = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: CRM + \u0027/api/posting?content_calendar_id=\u0027 + item.id,\n    headers: headers,\n    json: true\n  });\n\n  const postings = postingsResp.data || [];\n  const postingList = Array.isArray(postings) ? postings : [postings];\n\n  // Check status of each platform\n  const getStatus = (platform) =\u003e {\n    const p = postingList.find(x =\u003e x.platform === platform);\n    return p ? p.status : \u0027pending\u0027;\n  };\n\n  const gbp = getStatus(\u0027gbp\u0027);\n  const ig = getStatus(\u0027instagram\u0027);\n  const li = getStatus(\u0027linkedin\u0027);\n  const pin = getStatus(\u0027pinterest\u0027);\n  const tw = getStatus(\u0027twitter\u0027);\n  const threads = getStatus(\u0027threads\u0027);\n\n  // Determine overall status\n  const autoComplete = [\u0027success\u0027, \u0027manual_backup_sent\u0027, \u0027failed\u0027];\n  const manualComplete = [\u0027manual_posted\u0027, \u0027notification_sent\u0027];\n\n  const allDone = autoComplete.includes(gbp) \u0026\u0026 autoComplete.includes(ig) \u0026\u0026\n    (manualComplete.includes(li) || li === \u0027manual_posted\u0027) \u0026\u0026\n    autoComplete.includes(pin) \u0026\u0026\n    (manualComplete.includes(tw) || tw === \u0027manual_posted\u0027) \u0026\u0026\n    (autoComplete.includes(threads) || threads === \u0027failed\u0027);\n\n  const manualPending = (li === \u0027notification_sent\u0027) || (tw === \u0027notification_sent\u0027);\n\n  let newStatus;\n  if (li === \u0027manual_posted\u0027 \u0026\u0026 tw === \u0027manual_posted\u0027) {\n    newStatus = \u0027completed\u0027;\n  } else if (manualPending) {\n    newStatus = \u0027auto_complete_pending_manual\u0027;\n  } else {\n    newStatus = \u0027auto_complete_pending_manual\u0027;\n  }\n\n  await this.helpers.httpRequest({\n    method: \u0027PATCH\u0027,\n    url: CRM + \u0027/api/content/\u0027 + item.id + \u0027/status\u0027,\n    body: { status: newStatus },\n    headers: headers,\n    json: true\n  });\n\n  return [{ json: { ...item, _calendarStatus: newStatus, _statusUpdated: true } }];\n} catch (e) {\n  return [{ json: { ...item, _calendarStatus: \u0027unknown\u0027, _statusUpdated: false, _statusError: e.message } }];\n}"
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000050",
+                      "name":  "Update Calendar Status",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1560,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const item = $input.first().json;\nconst CRM = $env.CRM_API_URL;\nconst API_KEY = $env.CRM_API_KEY;\nconst headers = { \u0027Authorization\u0027: \u0027Bearer \u0027 + API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 };\n\n// Fetch all postings for today to build the report\nlet postingList = [];\ntry {\n  const postingsResp = await this.helpers.httpRequest({\n    method: \u0027GET\u0027,\n    url: CRM + \u0027/api/posting?date=\u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027),\n    headers: headers,\n    json: true\n  });\n  const postings = postingsResp.data || [];\n  postingList = Array.isArray(postings) ? postings : [postings];\n} catch(e) {\n  postingList = [];\n}\n\n// Build status map\nconst getStatus = (platform) =\u003e {\n  const p = postingList.find(x =\u003e x.platform === platform);\n  return p ? p.status : \u0027not_run\u0027;\n};\n\nconst statusEmoji = (status) =\u003e {\n  if (status === \u0027success\u0027) return \u0027✅\u0027;\n  if (status === \u0027notification_sent\u0027) return \u0027📌\u0027;\n  if (status === \u0027manual_posted\u0027) return \u0027✅\u0027;\n  if (status === \u0027manual_backup_sent\u0027) return \u0027⚠️\u0027;\n  if (status === \u0027failed\u0027) return \u0027❌\u0027;\n  if (status === \u0027blocked\u0027) return \u0027🚫\u0027;\n  if (status === \u0027skipped\u0027) return \u0027⏭️\u0027;\n  return \u0027⏳\u0027;\n};\n\nconst gbp = getStatus(\u0027gbp\u0027);\nconst ig = getStatus(\u0027instagram\u0027);\nconst li = getStatus(\u0027linkedin\u0027);\nconst pin = getStatus(\u0027pinterest\u0027);\nconst tw = getStatus(\u0027twitter\u0027);\nconst threads = getStatus(\u0027threads\u0027);\n\nconst autoStatuses = [gbp, ig, pin, threads];\nconst autoSuccess = autoStatuses.filter(s =\u003e s === \u0027success\u0027).length;\nconst manualStatuses = [li, tw];\nconst manualPending = manualStatuses.filter(s =\u003e s === \u0027notification_sent\u0027).length;\n\nconst brand = item.brand || \u0027Unknown\u0027;\nconst contentItem = item.topic || item.content_item || \u0027\u0027;\nconst area = item.area_id || \u0027\u0027;\n\nconst reportText = \u0027📊 Daily Report — \u0027 + $now.toFormat(\u0027yyyy-MM-dd\u0027) + \u0027\\n\u0027 +\n  \u0027Brand: \u0027 + brand + \u0027 | \u0027 + contentItem + \u0027 | Area: \u0027 + area + \u0027\\n\\n\u0027 +\n  statusEmoji(gbp) + \u0027 GBP: \u0027 + gbp + \u0027\\n\u0027 +\n  statusEmoji(ig) + \u0027 Instagram: \u0027 + ig + \u0027\\n\u0027 +\n  statusEmoji(li) + \u0027 LinkedIn: \u0027 + li + \u0027\\n\u0027 +\n  statusEmoji(pin) + \u0027 Pinterest: \u0027 + pin + \u0027\\n\u0027 +\n  statusEmoji(tw) + \u0027 Twitter/X: \u0027 + tw + \u0027\\n\u0027 +\n  statusEmoji(threads) + \u0027 Threads: \u0027 + threads + \u0027\\n\\n\u0027 +\n  \u0027Total auto: \u0027 + autoSuccess + \u0027/4 | Manual pending: \u0027 + manualPending + \u0027/2\u0027;\n\n// Send Telegram report\nawait this.helpers.httpRequest({\n  method: \u0027POST\u0027,\n  url: \u0027https://api.telegram.org/bot\u0027 + $env.TELEGRAM_BOT_TOKEN + \u0027/sendMessage\u0027,\n  body: { chat_id: $env.TELEGRAM_CHAT_ID, text: reportText },\n  json: true\n});\n\nreturn [{ json: { report_sent: true, report: reportText } }];"
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000060",
+                      "name":  "Build \u0026 Send Daily Report",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1860,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// No payload found — skip to daily report with minimal context\nreturn [{ json: { _hasPayload: false, _skipToReport: true, brand: \u0027\u0027, topic: \u0027\u0027, area_id: \u0027\u0027 } }];"
+                                     },
+                      "id":  "1f000000-0001-4000-8000-000000000070",
+                      "name":  "Skip to Report",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1260,
+                                       620
+                                   ]
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Daily 16:00 IST":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Load Today\u0027s Payload",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Load Today\u0027s Payload":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Validate Payload",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Validate Payload":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Has Payload?",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Has Payload?":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Publish Threads (with fallback)",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Skip to Report",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Publish Threads (with fallback)":  {
+                                                                "main":  [
+                                                                             [
+                                                                                 {
+                                                                                     "node":  "Update Calendar Status",
+                                                                                     "type":  "main",
+                                                                                     "index":  0
+                                                                                 }
+                                                                             ]
+                                                                         ]
+                                                            },
+                        "Update Calendar Status":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Build \u0026 Send Daily Report",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Skip to Report":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Build \u0026 Send Daily Report",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "versionId":  "1f-threads-report-v3",
+    "meta":  {
+                 "instanceId":  "extrabits-automation-v3"
+             }
+}

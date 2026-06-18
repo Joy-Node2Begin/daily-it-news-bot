@@ -1,0 +1,490 @@
+{
+  "name": "WF2: WhatsApp Inbound \u2192 AI Qualify \u2192 CRM",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF2: WhatsApp Inbound \u2192 AI Qualify \u2192 CRM\n\n**Prerequisites:**\n1. Credentials: OpenAI API Key (Header Auth), CRM Webhook Auth (Header Auth)\n2. n8n Variables: `CRM_API_URL`, `WHATSAPP_PHONE_NUMBER_ID`\n3. In Meta App Dashboard \u2192 WhatsApp \u2192 Configuration \u2192 set Webhook URL to this webhook's production URL\n4. Subscribe to webhook field: `messages`\n\n**Webhook Verification:**\nMeta sends a one-time GET request to verify. Create a temporary workflow with a GET webhook on the same path that returns `hub.challenge` query param. After verification, deactivate it.\n\n**Flow:** WhatsApp message \u2192 Parse payload \u2192 AI qualify \u2192 Push lead + message to CRM \u2192 Optional auto-reply",
+        "height": 330,
+        "width": 780,
+        "color": 6
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000010",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        460
+      ],
+      "webhookId": "whatsapp-inbound-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\n// WhatsApp Cloud API payload structure\nconst entry = body.entry?.[0];\nconst changes = entry?.changes?.[0];\nconst value = changes?.value || {};\n\n// Check if this is a message or just a status update\nconst messages = value.messages || [];\nconst statuses = value.statuses || [];\nconst contacts = value.contacts || [];\n\nif (messages.length === 0 && statuses.length > 0) {\n  // This is a delivery status update (sent/delivered/read), not a message\n  const status = statuses[0];\n  return [{\n    json: {\n      is_message: false,\n      is_status_update: true,\n      platform_message_id: status.id || '',\n      status: status.status || '',\n      recipient_id: status.recipient_id || ''\n    }\n  }];\n}\n\nif (messages.length === 0) {\n  return [{ json: { is_message: false, is_status_update: false } }];\n}\n\nconst msg = messages[0];\nconst contact = contacts[0] || {};\n\n// Extract message content based on type\nlet content = '';\nlet messageType = msg.type || 'text';\n\nif (messageType === 'text') {\n  content = msg.text?.body || '';\n} else if (messageType === 'image') {\n  content = msg.image?.caption || '[Image]';\n} else if (messageType === 'video') {\n  content = msg.video?.caption || '[Video]';\n} else if (messageType === 'audio') {\n  content = '[Audio message]';\n} else if (messageType === 'document') {\n  content = msg.document?.filename || '[Document]';\n} else if (messageType === 'location') {\n  content = '[Location: ' + (msg.location?.latitude || '') + ',' + (msg.location?.longitude || '') + ']';\n} else {\n  content = '[' + messageType + ']';\n}\n\nreturn [{\n  json: {\n    is_message: true,\n    is_status_update: false,\n    platform_message_id: msg.id || '',\n    platform_user_id: msg.from || '',\n    sender_name: contact.profile?.name || '',\n    content: content,\n    message_type: messageType,\n    timestamp: msg.timestamp || '',\n    phone_number_id: value.metadata?.phone_number_id || ''\n  }\n}];"
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000020",
+      "name": "Parse WA Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_message }}"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000025",
+      "name": "Is Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        560,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json;\n\nconst systemPrompt = [\n  'You are a lead qualification AI for an educational institute that offers:',\n  '- Professional courses: Data Analytics, Python, MERN, Web Dev, AI/ML, etc.',\n  '- Academic tuition: BCA, BSCIT, ICT',\n  '',\n  'Analyze the lead/message and respond ONLY with valid JSON:',\n  '{',\n  '  \"score\": <number 1-10>,',\n  '  \"classification\": \"hot_lead\" | \"warm_lead\" | \"cold_lead\" | \"spam\" | \"not_a_lead\",',\n  '  \"interest_type\": \"Professional\" | \"Academic\" | \"Unknown\",',\n  '  \"course_interest\": \"<extracted course name or empty>\",',\n  '  \"extracted_name\": \"<name if mentioned>\",',\n  '  \"reason\": \"<brief explanation>\",',\n  '  \"suggested_reply\": \"<brief friendly auto-reply in same language as message>\"',\n  '}',\n  '',\n  'Scoring guide:',\n  '- 8-10: Clear course interest, real contact info, specific program mentioned',\n  '- 5-7: General interest, vague details, might need follow-up',\n  '- 3-4: Low quality, incomplete info, unclear intent',\n  '- 1-2: Spam, test submission, or clearly not interested',\n  '',\n  'Note: Messages may be in Hindi, Gujarati, or English. Handle all languages.',\n  'Never mention fees in suggested_reply.'\n].join('\\n');\n\nconst userMessage = 'WhatsApp message from: ' + msg.sender_name + ' (Phone: ' + msg.platform_user_id + ')\\nMessage: ' + msg.content;\n\nreturn [{\n  json: {\n    ...msg,\n    request_body: {\n      model: 'llama-3.3-70b-versatile',\n      temperature: 0.3,\n      max_tokens: 500,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userMessage }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000030",
+      "name": "Prepare AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000040",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_OPENAI",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst msg = $('Prepare AI Request').first().json;\n\nlet aiText = response.choices?.[0]?.message?.content || '';\naiText = aiText.replace(/```json|```/g, '').trim();\n\nlet ai;\ntry {\n  ai = JSON.parse(aiText);\n} catch (e) {\n  ai = {\n    score: 5,\n    classification: 'warm_lead',\n    interest_type: 'Unknown',\n    course_interest: '',\n    extracted_name: msg.sender_name || '',\n    reason: 'AI parse error - defaulting to warm',\n    suggested_reply: ''\n  };\n}\n\nconst score = Number(ai.score) || 5;\n\n// Clean phone number for mobile field\nlet mobile = msg.platform_user_id || '';\nmobile = mobile.replace(/[\\s\\-\\(\\)\\+]/g, '');\nif (mobile.startsWith('91') && mobile.length > 10) mobile = mobile.substring(2);\nif (mobile.length > 10) mobile = mobile.slice(-10);\n\nreturn [{\n  json: {\n    // Lead payload\n    lead_payload: {\n      action: 'create_lead',\n      name: ai.extracted_name || msg.sender_name || '',\n      mobile: mobile,\n      source: 'WhatsApp',\n      channel_type: 'whatsapp',\n      entry_type: 'WhatsApp',\n      platform_user_id: msg.platform_user_id,\n      interest_type: ai.interest_type || 'Unknown',\n      course_interest: ai.course_interest || '',\n      notes: 'AI: ' + (ai.reason || ''),\n      ai_score: score,\n      ai_classification: ai.classification || 'warm_lead',\n      source_detail: 'WhatsApp Inbound Message'\n    },\n    // Message payload\n    message_payload: {\n      action: 'create_message',\n      platform_user_id: msg.platform_user_id,\n      channel_type: 'whatsapp',\n      direction: 'inbound',\n      message_type: msg.message_type || 'text',\n      content: msg.content,\n      platform_message_id: msg.platform_message_id,\n      sender_name: msg.sender_name || '',\n      ai_score: score,\n      ai_classification: ai.classification || 'warm_lead'\n    },\n    // Auto-reply info\n    suggested_reply: ai.suggested_reply || '',\n    ai_score: score,\n    platform_user_id: msg.platform_user_id,\n    phone_number_id: msg.phone_number_id\n  }\n}];"
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000050",
+      "name": "Build CRM Payloads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.lead_payload }}",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000060",
+      "name": "Push Lead to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Build CRM Payloads').first().json.message_payload }}",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000070",
+      "name": "Push Message to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Build CRM Payloads').first().json.suggested_reply }}",
+              "operation": "isNotEmpty"
+            }
+          ],
+          "number": [
+            {
+              "value1": "={{ $('Build CRM Payloads').first().json.ai_score }}",
+              "operation": "largerEqual",
+              "value2": 5
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000080",
+      "name": "Should Auto-Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/v21.0/' + $('Build CRM Payloads').first().json.phone_number_id + '/messages' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $('Build CRM Payloads').first().json.platform_user_id, type: 'text', text: { body: $('Build CRM Payloads').first().json.suggested_reply } } }}",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000090",
+      "name": "Send Auto-Reply via WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2500,
+        160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_WA",
+          "name": "WhatsApp Cloud API Token"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "w2a1b2c3-0001-4001-8001-000000000095",
+      "name": "No Auto-Reply Needed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle delivery status updates\nconst data = $input.first().json;\n\nif (data.is_status_update && data.platform_message_id) {\n  return [{\n    json: {\n      action: 'update_delivery_status',\n      platform_message_id: data.platform_message_id,\n      status: data.status\n    }\n  }];\n}\n\n// Not a status update and not a message \u2013 skip\nreturn [{ json: { action: 'skip', reason: 'Not a message or status update' } }];"
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000100",
+      "name": "Handle Status Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_status_update }}"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000105",
+      "name": "Is Status Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL + '/api/inquiry_webhook.php' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "w2a1b2c3-0001-4001-8001-000000000110",
+      "name": "Update Delivery Status in CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        520
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CHANGE_ME_CRM",
+          "name": "CRM Webhook Auth"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "w2a1b2c3-0001-4001-8001-000000000115",
+      "name": "Ignore",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        700
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse WA Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WA Payload": {
+      "main": [
+        [
+          {
+            "node": "Is Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Message?": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Request": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Build CRM Payloads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build CRM Payloads": {
+      "main": [
+        [
+          {
+            "node": "Push Lead to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Lead to CRM": {
+      "main": [
+        [
+          {
+            "node": "Push Message to CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Message to CRM": {
+      "main": [
+        [
+          {
+            "node": "Should Auto-Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Auto-Reply?": {
+      "main": [
+        [
+          {
+            "node": "Send Auto-Reply via WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Auto-Reply Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Status Update": {
+      "main": [
+        [
+          {
+            "node": "Is Status Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Status Update?": {
+      "main": [
+        [
+          {
+            "node": "Update Delivery Status in CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "wf2-whatsapp-inbound-v1",
+  "meta": {
+    "instanceId": "extrabits-crm-inquiry-system"
+  },
+  "tags": [
+    {
+      "name": "CRM Inquiry System"
+    }
+  ],
+  "id": "fc9e9c51-4524-4a60-965a-1d6d1fb90f83"
+}
