@@ -1,23 +1,48 @@
 services:
   - type: web
-    name: n8n-news-bot
-    env: docker
-    plan: free # Note: Free plan will spin down after inactivity. Upgrade to Starter ($7) for 24/7.
-    # We mount a persistent disk to save your workflow/credentials between restarts.
-    # Note: Disks cost $0.25/month and require a paid instance. If you use a free instance, 
-    # remove the 'disk' section and remember to re-import your workflow if Render restarts the server.
+    name: n8n-automation-bot
+    runtime: docker
+    plan: starter  # $7/month - required for 24/7 uptime (free plan sleeps after 15 min)
+    healthCheckPath: /healthz
+    autoDeploy: true
+
+    # Persistent disk to preserve workflows, credentials, and execution history between deploys
     disk:
       name: n8n-data
       mountPath: /home/node/.n8n
-      sizeGB: 1
+      sizeGB: 1  # $0.25/GB/month
+
     envVars:
+      # n8n core settings
       - key: N8N_PORT
         value: 10000
       - key: PORT
         value: 10000
       - key: WEBHOOK_URL
-        value: https://n8n-news-bot.onrender.com
+        value: https://n8n-automation-bot.onrender.com
+      - key: N8N_HOST
+        value: 0.0.0.0
       - key: GENERIC_TIMEZONE
         value: Asia/Kolkata
       - key: N8N_DIAGNOSTICS_ENABLED
         value: false
+
+      # Security - set your own values in Render dashboard
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: true
+      - key: N8N_BASIC_AUTH_USER
+        sync: false  # Set in Render dashboard
+      - key: N8N_BASIC_AUTH_PASSWORD
+        sync: false  # Set in Render dashboard
+
+      # Encryption key for stored credentials (IMPORTANT: set once, never change)
+      - key: N8N_ENCRYPTION_KEY
+        sync: false  # Set in Render dashboard
+
+      # Execution settings for reliability
+      - key: EXECUTIONS_DATA_SAVE_ON_ERROR
+        value: all
+      - key: EXECUTIONS_DATA_SAVE_ON_SUCCESS
+        value: all
+      - key: EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS
+        value: true

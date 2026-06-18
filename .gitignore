@@ -1,0 +1,4 @@
+.env
+*.bak
+node_modules/
+.n8n/
