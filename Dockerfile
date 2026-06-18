@@ -18,6 +18,8 @@ RUN chown -R node:node /workflows /import-workflows.sh
 
 # Switch back to the n8n user
 USER node
+# Use tini as the entrypoint to avoid zombie processes
+ENTRYPOINT ["tini", "--"]
 
 # Start n8n and run the import script in the background
-CMD sh -c "/import-workflows.sh & n8n start"
+CMD ["/bin/sh", "-c", "/import-workflows.sh & /docker-entrypoint.sh start"]
