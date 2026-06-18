@@ -23,5 +23,5 @@ USER node
 # Use tini as the entrypoint to avoid zombie processes
 ENTRYPOINT ["tini", "--"]
 
-# Start n8n and run the import script in the background
-CMD ["/bin/sh", "-c", "/import-workflows.sh & /docker-entrypoint.sh start"]
+# Run the import script first, then start n8n to avoid Out-Of-Memory (OOM) on free tier
+CMD ["/bin/sh", "-c", "/import-workflows.sh && exec /docker-entrypoint.sh start"]
