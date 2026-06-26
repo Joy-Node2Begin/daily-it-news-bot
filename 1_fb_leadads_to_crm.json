@@ -92,23 +92,16 @@
         "conditions": {
           "boolean": [
             {
-              "value1": "={{ $json.should_create_lead }}"
+              "value1": "={{ $json.should_create_lead }}",
+              "value2": true
             }
-          ],
-          "combinator": "and",
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 1
-          }
-        },
-        "options": {}
+          ]
+        }
       },
       "id": "f0a1b2c3-0001-4001-8001-000000000050",
       "name": "Qualified?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "typeVersion": 1,
       "position": [
         1200,
         400
